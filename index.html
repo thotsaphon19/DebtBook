@@ -208,6 +208,64 @@
     border-radius:4px 4px 0 0; color:var(--ink-soft);
   }
   .sheet-tab.active{ background:#fffdf7; border-color:var(--border); color:var(--ledger-dark); font-weight:600; }
+
+  .format-toolbar{
+    display:flex; align-items:center; gap:4px; background:#efe8d4; border-bottom:1px solid var(--border);
+    padding:6px 10px; flex-wrap:wrap;
+  }
+  .fmt-btn{
+    background:#fffdf7; border:1px solid var(--border); border-radius:3px; padding:4px 9px;
+    font-size:12.5px; cursor:pointer; color:var(--ink); line-height:1;
+  }
+  .fmt-btn:hover{ background:var(--card); }
+  .fmt-sep{ width:1px; height:18px; background:var(--border); margin:0 4px; display:inline-block; }
+  .col-resize-handle{
+    position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:4;
+  }
+  .col-resize-handle:hover{ background:rgba(166,124,61,0.4); }
+  .col-del-btn{
+    position:absolute; left:3px; top:1px; font-size:11px; color:var(--stamp-red); cursor:pointer;
+    line-height:1; opacity:0.6;
+  }
+  .col-del-btn:hover{ opacity:1; }
+
+  /* ---------- แถบเมนู + แถบไอคอน แบบ Google Sheets จริง (ธีมสว่าง แยกจากธีมสมุดบัญชีของแอป) ---------- */
+  .gsheet-menubar{
+    background:#fff; border-bottom:1px solid #e0e0e0; padding:6px 10px 0;
+    display:flex; gap:2px; font-size:13px; color:#3c4043; flex-wrap:wrap;
+  }
+  .menubar-item{ position:relative; padding:6px 10px; cursor:pointer; border-radius:4px 4px 0 0; }
+  .menubar-item:hover{ background:#f1f3f4; }
+  .menubar-dropdown{
+    display:none; position:absolute; top:100%; left:0; background:#fff; border:1px solid #dadce0;
+    box-shadow:0 2px 8px rgba(0,0,0,0.18); min-width:220px; z-index:30; padding:6px 0; text-align:left;
+  }
+  .menubar-item:hover .menubar-dropdown{ display:block; }
+  .menubar-dropdown .mi{
+    padding:8px 16px; font-size:13px; color:#3c4043; cursor:pointer; white-space:nowrap;
+    display:flex; align-items:center; gap:8px;
+  }
+  .menubar-dropdown .mi:hover{ background:#f1f3f4; }
+  .menubar-dropdown .mi-sep{ height:1px; background:#e6e6e6; margin:5px 0; }
+  .menubar-dropdown .mi-note{ padding:8px 16px; font-size:12px; color:#80868b; white-space:normal; max-width:240px; }
+  .menubar-dropdown input[type=text]{ margin:4px 12px; width:calc(100% - 24px); font-size:13px; padding:6px 8px; }
+
+  .gsheet-iconbar{
+    background:#f8f9fa; border-bottom:1px solid #e0e0e0; padding:6px 10px;
+    display:flex; align-items:center; gap:3px; flex-wrap:wrap;
+  }
+  .icon-btn{
+    background:none; border:none; padding:5px 8px; border-radius:4px; cursor:pointer;
+    font-size:13px; color:#3c4043;
+  }
+  .icon-btn:hover{ background:#e8eaed; }
+  .icon-btn.active-toggle{ background:#d2e3fc; }
+  .icon-sep{ width:1px; height:20px; background:#e0e0e0; margin:0 6px; }
+  .icon-input-color{ width:24px; height:24px; border:none; padding:0; cursor:pointer; vertical-align:middle; background:none; }
+  .sum-chip{
+    margin-left:auto; font-size:12.5px; color:#3c4043; background:#e8f0fe; border:1px solid #d2e3fc;
+    padding:5px 10px; border-radius:4px; font-family:'IBM Plex Mono',monospace;
+  }
 </style>
 </head>
 <body>
@@ -221,6 +279,12 @@ const state = {
   view: 'dashboard',
   adminColumnEntity: 'invoices',
   gridEntity: 'debtors',
+  gridColWidths: {debtors:{}, invoices:{}, payments:{}},
+  columnFormats: {debtors:{}, invoices:{}, payments:{}},
+  gridSearchQuery: '',
+  gridHideSystemCols: false,
+  gridSort: { field:null, dir:'asc' },
+  gridZoom: 100,
   data: { dashboard:null, debtors:[], invoices:[], payments:[], notifyLog:[], users:[], lineConfig:null, lineContacts:[], customFields:{debtors:[],invoices:[],payments:[]} },
   loading:false,
 };
@@ -513,35 +577,193 @@ function colLetter(n){ // n เป็นเลขคอลัมน์แบบ 
   return s;
 }
 
-function viewGrid(){
-  const entity = state.gridEntity || 'debtors';
+let gridSelected = { entity: null, field: null };
+
+function getGridHeaders(entity){
   const rows = state.data[entity] || [];
   const customFields = state.data.customFields[entity] || [];
-  const formulaLabels = customFields.filter(f=>f.type==='formula').map(f=>f.label);
-  const headers = rows.length
+  let headers = rows.length
     ? Object.keys(rows[0])
     : ['id'].concat(CORE_FIELDS_BY_ENTITY[entity]||[]).concat(['createdAt']).concat(customFields.map(f=>f.label));
+  if(state.gridHideSystemCols){ headers = headers.filter(h=>h!=='id' && h!=='createdAt'); }
+  return headers;
+}
+
+function getGridDisplayRows(entity, allHeaders){
+  let rows = (state.data[entity] || []).slice();
+  const q = (state.gridSearchQuery||'').trim().toLowerCase();
+  if(q){
+    rows = rows.filter(r => allHeaders.some(h => String(r[h]!==undefined && r[h]!==null ? r[h] : '').toLowerCase().includes(q)));
+  }
+  const sort = state.gridSort || {};
+  if(sort.field){
+    rows.sort((a,b)=>{
+      const va = a[sort.field], vb = b[sort.field];
+      const na = Number(va), nb = Number(vb);
+      let cmp;
+      if(va!=='' && vb!=='' && va!=null && vb!=null && !isNaN(na) && !isNaN(nb)) cmp = na - nb;
+      else cmp = String(va||'').localeCompare(String(vb||''));
+      return sort.dir==='desc' ? -cmp : cmp;
+    });
+  }
+  return rows;
+}
+
+function viewGrid(){
+  const entity = state.gridEntity || 'debtors';
+  const rawHeaders = (state.data[entity]||[]).length ? Object.keys(state.data[entity][0]) : [];
+  const headers = getGridHeaders(entity);
+  const rows = getGridDisplayRows(entity, rawHeaders.length ? rawHeaders : headers);
+  const customFields = state.data.customFields[entity] || [];
+  const formulaLabels = customFields.filter(f=>f.type==='formula').map(f=>f.label);
+  const customLabels = customFields.map(f=>f.label);
+  const widths = state.gridColWidths[entity] || {};
+  const formats = state.columnFormats[entity] || {};
+  const selectedField = gridSelected.entity===entity ? gridSelected.field : null;
+  const selectedFmt = selectedField ? (formats[selectedField]||{}) : {};
+
+  // สรุปผลรวม (Σ) ของคอลัมน์ที่เลือกอยู่ จากแถวที่แสดงอยู่ตอนนี้ (หลังค้นหา/เรียงลำดับ)
+  let sumChip = '';
+  if(selectedField){
+    const nums = rows.map(r=>Number(r[selectedField])).filter(n=>!isNaN(n));
+    if(nums.length){
+      const sum = nums.reduce((a,b)=>a+b,0);
+      sumChip = `<span class="sum-chip">Σ = ${thb(sum)} · เฉลี่ย ${thb(sum/nums.length)} · จำนวน ${nums.length} แถว</span>`;
+    }
+  }
 
   return `
   ${renderTopbar('ตารางข้อมูล')}
-  <p class="setting-hint" style="margin-bottom:10px;">หน้านี้คือ Google Sheet ตัวจริงที่ซิงค์กันสด — แก้ที่นี่หรือแก้ในตัว Google Sheet เองก็ได้ ข้อมูลจะตรงกันเสมอ (คอลัมน์/แถวตรงกับที่เห็นในชีทจริงทุกตัวอักษร)</p>
+  <p class="setting-hint" style="margin-bottom:10px;">หน้านี้คือ Google Sheet ตัวจริงที่ซิงค์กันสด — แก้ที่นี่หรือแก้ในตัว Google Sheet เองก็ได้ ข้อมูลจะตรงกันเสมอ (การค้นหา/เรียงลำดับ/ซูมเป็นมุมมองส่วนตัว ไม่เปลี่ยนลำดับแถวจริงใน Sheet)</p>
   <div class="card" style="padding:0; overflow:hidden;">
-    <div class="sheet-toolbar">
-      <span class="dot"></span> เชื่อมต่อสด กับแท็บ <span class="mono">${ENTITY_SHEET_REAL_NAME[entity]}</span>
-      <span style="margin-left:auto; display:flex; gap:8px;">
-        <button class="btn secondary" style="padding:5px 12px; font-size:12.5px;" onclick="gridAddRow()">+ แถวใหม่</button>
-        <button class="btn secondary" style="padding:5px 12px; font-size:12.5px;" onclick="openAddColumnModal('${entity}')">+ คอลัมน์</button>
-      </span>
+
+    <div class="gsheet-menubar">
+      <div class="menubar-item">ไฟล์
+        <div class="menubar-dropdown">
+          <div class="mi" onclick="exportGridCSV()">⬇ ดาวน์โหลดเป็น CSV</div>
+        </div>
+      </div>
+      <div class="menubar-item">แก้ไข
+        <div class="menubar-dropdown">
+          <div class="mi-note">ค้นหาข้อความในตารางนี้</div>
+          <input type="text" placeholder="พิมพ์เพื่อค้นหา..." value="${state.gridSearchQuery||''}" oninput="setGridSearch(this.value)">
+        </div>
+      </div>
+      <div class="menubar-item">ดู
+        <div class="menubar-dropdown">
+          <div class="mi" onclick="toggleGridHideSystemCols()">${state.gridHideSystemCols?'☑':'☐'} ซ่อนคอลัมน์ระบบ (id, createdAt)</div>
+        </div>
+      </div>
+      <div class="menubar-item">แทรก
+        <div class="menubar-dropdown">
+          <div class="mi" onclick="gridAddRow()">＋ แถวใหม่</div>
+          <div class="mi" onclick="openAddColumnModal('${entity}')">＋ คอลัมน์ใหม่</div>
+        </div>
+      </div>
+      <div class="menubar-item">รูปแบบ
+        <div class="menubar-dropdown">
+          <div class="mi-note">ใช้กับคอลัมน์ที่เลือกอยู่: <b>${selectedField||'(คลิกเซลล์ก่อน)'}</b></div>
+          <div class="mi" onclick="applyColumnFormat({bold:true})"><b>B</b>&nbsp; ตัวหนา</div>
+          <div class="mi" onclick="applyColumnFormat({italic:true})"><i>I</i>&nbsp; ตัวเอียง</div>
+          <div class="mi" onclick="applyColumnFormat({strikethrough:true})"><s>S</s>&nbsp; ขีดทับ</div>
+          <div class="mi-sep"></div>
+          <div class="mi" onclick="applyColumnFormat({align:'left'})">⯇ ชิดซ้าย</div>
+          <div class="mi" onclick="applyColumnFormat({align:'center'})">☰ กึ่งกลาง</div>
+          <div class="mi" onclick="applyColumnFormat({align:'right'})">⯈ ชิดขวา</div>
+          <div class="mi-sep"></div>
+          <div class="mi" onclick="applyColumnFormat({numberFormat:'#,##0.00'})">123 ตัวเลขทศนิยม</div>
+          <div class="mi" onclick="applyColumnFormat({numberFormat:'฿#,##0.00'})">฿ สกุลเงินบาท</div>
+          <div class="mi" onclick="applyColumnFormat({numberFormat:'@'})">ABC ข้อความธรรมดา</div>
+          <div class="mi-sep"></div>
+          <div class="mi" onclick="clearColumnFormat()">⟲ ล้างการจัดรูปแบบ</div>
+        </div>
+      </div>
+      <div class="menubar-item">ข้อมูล
+        <div class="menubar-dropdown">
+          <div class="mi-note">เรียงลำดับตามคอลัมน์ที่เลือกอยู่: <b>${selectedField||'(คลิกเซลล์ก่อน)'}</b></div>
+          <div class="mi" onclick="sortGridBy('asc')">🔼 เรียง A → Z / น้อย → มาก</div>
+          <div class="mi" onclick="sortGridBy('desc')">🔽 เรียง Z → A / มาก → น้อย</div>
+          <div class="mi" onclick="sortGridBy(null)">✕ ยกเลิกการเรียงลำดับ</div>
+        </div>
+      </div>
+      <div class="menubar-item">เครื่องมือ
+        <div class="menubar-dropdown">
+          <div class="mi" onclick="setView('admin')">⚙ ไปที่ผู้ดูแลระบบ</div>
+          <div class="mi" onclick="runSetupFromWeb()">🔄 รันตั้งค่าเริ่มต้นระบบอีกครั้ง</div>
+        </div>
+      </div>
+      <div class="menubar-item">ส่วนขยาย
+        <div class="menubar-dropdown">
+          <div class="mi-note">การเชื่อมต่อ/ส่วนขยายทั้งหมดจัดการผ่าน Apps Script ในตัว Google Sheet โดยตรง</div>
+        </div>
+      </div>
+      <div class="menubar-item">ความช่วยเหลือ
+        <div class="menubar-dropdown">
+          <div class="mi-note">หน้านี้ซิงค์กับ Google Sheet ตัวจริงแบบสองทาง แก้ที่นี่หรือแก้ในชีทเองก็ได้ ข้อมูลจะตรงกันเสมอ ดูคู่มือฉบับเต็มได้ที่ README_setup.md</div>
+        </div>
+      </div>
+      <div class="menubar-item">ระบบแจ้งหนี้
+        <div class="menubar-dropdown">
+          <div class="mi" onclick="setView('dashboard')">📊 แดชบอร์ด</div>
+          <div class="mi" onclick="setView('admin')">⚙ ผู้ดูแลระบบ</div>
+          <div class="mi" onclick="runSetupFromWeb()">🔄 ตั้งค่าเริ่มต้นระบบ (สร้างตาราง+ข้อมูลทดสอบ)</div>
+        </div>
+      </div>
     </div>
+
+    <div class="gsheet-iconbar">
+      <button class="icon-btn" title="ซูมออก" onclick="adjustZoom(-10)">－</button>
+      <span class="mono" style="font-size:12px; min-width:38px; text-align:center; display:inline-block;">${state.gridZoom}%</span>
+      <button class="icon-btn" title="ซูมเข้า" onclick="adjustZoom(10)">＋</button>
+      <span class="icon-sep"></span>
+      <button class="icon-btn" title="รูปแบบตัวเลข" onclick="applyColumnFormat({numberFormat:'#,##0.00'})">123</button>
+      <button class="icon-btn" title="สกุลเงินบาท" onclick="applyColumnFormat({numberFormat:'฿#,##0.00'})">฿</button>
+      <span class="icon-sep"></span>
+      <button class="icon-btn" title="ลดขนาดตัวอักษร" onclick="adjustFontSize(-1)">A－</button>
+      <span class="mono" style="font-size:12px;">${selectedFmt.fontSize||10}</span>
+      <button class="icon-btn" title="เพิ่มขนาดตัวอักษร" onclick="adjustFontSize(1)">A＋</button>
+      <span class="icon-sep"></span>
+      <button class="icon-btn" title="ตัวหนา" onclick="applyColumnFormat({bold:true})"><b>B</b></button>
+      <button class="icon-btn" title="ตัวเอียง" onclick="applyColumnFormat({italic:true})"><i>I</i></button>
+      <button class="icon-btn" title="ขีดทับ" onclick="applyColumnFormat({strikethrough:true})"><s>S</s></button>
+      <span class="icon-sep"></span>
+      <span title="สีตัวอักษร" style="display:inline-flex; align-items:center; gap:2px;">A<input class="icon-input-color" type="color" value="${selectedFmt.fontColor||'#20302c'}" onchange="applyColumnFormat({fontColor:this.value})"></span>
+      <span title="สีพื้นหลังเซลล์" style="display:inline-flex; align-items:center; gap:2px;">🪣<input class="icon-input-color" type="color" value="${selectedFmt.backgroundColor||'#ffffff'}" onchange="applyColumnFormat({backgroundColor:this.value})"></span>
+      <span class="icon-sep"></span>
+      <button class="icon-btn" title="ชิดซ้าย" onclick="applyColumnFormat({align:'left'})">⯇</button>
+      <button class="icon-btn" title="กึ่งกลาง" onclick="applyColumnFormat({align:'center'})">☰</button>
+      <button class="icon-btn" title="ชิดขวา" onclick="applyColumnFormat({align:'right'})">⯈</button>
+      <span class="icon-sep"></span>
+      <button class="icon-btn ${state.gridSearchQuery?'active-toggle':''}" title="ค้นหา/กรอง" onclick="promptGridSearch()">🔍</button>
+      <button class="icon-btn" title="ดาวน์โหลด CSV" onclick="exportGridCSV()">⬇ CSV</button>
+      ${sumChip}
+    </div>
+
     <div class="formula-bar">
       <span class="ref-box" id="fxRef">-</span>
       <span class="fx">fx</span>
       <span class="val-box" id="fxVal"></span>
     </div>
-    <div class="sheet-grid-wrap">
-      ${!rows.length ? emptyState('ยังไม่มีข้อมูล','กด "+ แถวใหม่" เพื่อเริ่มเพิ่มแถวแรก') : `
-      <table class="sheet-table">
-        <thead><tr><th class="row-num-head"></th>${headers.map((h,i)=>`<th title="${h}">${colLetter(i+1)}</th>`).join('')}<th></th></tr></thead>
+    <div class="sheet-grid-wrap" style="zoom:${state.gridZoom}%;">
+      ${!rows.length ? emptyState('ไม่พบข้อมูล','ลองล้างคำค้นหา หรือกด "+ แถวใหม่" เพื่อเริ่มเพิ่มแถวแรก') : `
+      <table class="sheet-table" style="table-layout:fixed;">
+        <colgroup>
+          <col style="width:38px;">
+          ${headers.map((h,i)=>`<col id="col_${entity}_${i}" style="width:${widths[h]||120}px;">`).join('')}
+          <col style="width:56px;">
+        </colgroup>
+        <thead><tr>
+          <th class="row-num-head"></th>
+          ${headers.map((h,i)=>{
+            const isCustom = customLabels.indexOf(h)!==-1;
+            return `<th title="${h}" style="position:relative;">
+              ${colLetter(i+1)}
+              ${isCustom?`<span class="col-del-btn" title="ลบคอลัมน์นี้" onclick="deleteColumnFromGrid('${entity}','${h}')">×</span>`:''}
+              <span class="col-resize-handle" onmousedown="startColResize(event,'${entity}',${i})"></span>
+            </th>`;
+          }).join('')}
+          <th></th>
+        </tr></thead>
         <tbody>
           ${rows.map((row,ri)=>`
           <tr>
@@ -550,8 +772,10 @@ function viewGrid(){
               const readOnly = (h==='id' || h==='createdAt' || formulaLabels.indexOf(h)!==-1);
               const val = (row[h] !== undefined && row[h] !== null) ? row[h] : '';
               const ref = colLetter(ci+1) + (ri+2);
-              return `<td class="cell ${readOnly?'readonly-cell':''}" ${readOnly?'':'contenteditable="true"'}
-                onfocus="updateFormulaBar(this,'${ref}')"
+              const fmt = formats[h] || {};
+              const cellStyle = `${fmt.bold?'font-weight:700;':''}${fmt.italic?'font-style:italic;':''}${fmt.strikethrough?'text-decoration:line-through;':''}${fmt.align?'text-align:'+fmt.align+';':''}${fmt.fontSize?'font-size:'+fmt.fontSize+'px;':''}${fmt.fontColor?'color:'+fmt.fontColor+';':''}${fmt.backgroundColor?'background:'+fmt.backgroundColor+';':''}`;
+              return `<td class="cell ${readOnly?'readonly-cell':''}" style="${cellStyle}" ${readOnly?'':'contenteditable="true"'}
+                onfocus="updateFormulaBar(this,'${ref}','${entity}','${h}')"
                 ${readOnly?'':`onblur="handleGridCellEdit(this,'${entity}','${row.id}','${h}')"`}
               >${val}</td>`;
             }).join('')}
@@ -568,11 +792,120 @@ function viewGrid(){
   </div>`;
 }
 
-function updateFormulaBar(el, ref){
+function updateFormulaBar(el, ref, entity, field){
+  gridSelected = { entity, field };
   const refBox = document.getElementById('fxRef');
   const valBox = document.getElementById('fxVal');
   if(refBox) refBox.textContent = ref;
   if(valBox) valBox.textContent = el.textContent;
+  // หมายเหตุ: ไม่เรียก render() ตรงนี้โดยตั้งใจ เพราะจะทำให้เซลล์ที่เพิ่งคลิกเสีย focus ทันที
+  // (แถบเครื่องมือ/ค่า Σ จะอัปเดตให้เห็นในรอบ render ถัดไป เช่น หลังแก้ไข/เพิ่มแถว/สลับแท็บ)
+}
+
+async function applyColumnFormat(format){
+  if(!gridSelected.field){ showToast('คลิกเซลล์ในคอลัมน์ที่ต้องการจัดรูปแบบก่อน', true); return; }
+  const entity = gridSelected.entity, field = gridSelected.field;
+  const current = state.columnFormats[entity][field] || {};
+  const next = Object.assign({}, current);
+  if(format.bold !== undefined) next.bold = !current.bold;
+  if(format.italic !== undefined) next.italic = !current.italic;
+  if(format.strikethrough !== undefined) next.strikethrough = !current.strikethrough;
+  if(format.align !== undefined) next.align = format.align;
+  if(format.numberFormat !== undefined) next.numberFormat = format.numberFormat;
+  if(format.fontSize !== undefined) next.fontSize = format.fontSize;
+  if(format.fontColor !== undefined) next.fontColor = format.fontColor;
+  if(format.backgroundColor !== undefined) next.backgroundColor = format.backgroundColor;
+  state.columnFormats[entity][field] = next;
+  try{
+    await apiPost('gridFormatColumn', {sheetKey: entity, field, format: next});
+    render();
+  }catch(e){ showToast(e.message, true); }
+}
+async function clearColumnFormat(){
+  if(!gridSelected.field){ showToast('คลิกเซลล์ในคอลัมน์ที่ต้องการล้างรูปแบบก่อน', true); return; }
+  const entity = gridSelected.entity, field = gridSelected.field;
+  state.columnFormats[entity][field] = {};
+  try{
+    await apiPost('gridFormatColumn', {sheetKey: entity, field, format:{bold:false, italic:false, strikethrough:false, align:'left', numberFormat:'General', fontSize:10, fontColor:'#000000', backgroundColor:'#ffffff'}});
+    render();
+  }catch(e){ showToast(e.message, true); }
+}
+function adjustFontSize(delta){
+  if(!gridSelected.field){ showToast('คลิกเซลล์ในคอลัมน์ที่ต้องการก่อน', true); return; }
+  const current = state.columnFormats[gridSelected.entity][gridSelected.field] || {};
+  const size = Math.min(36, Math.max(6, (current.fontSize||10) + delta));
+  applyColumnFormat({fontSize:size});
+}
+function adjustZoom(delta){
+  state.gridZoom = Math.min(150, Math.max(50, (state.gridZoom||100) + delta));
+  render();
+}
+
+function setGridSearch(value){ state.gridSearchQuery = value; render(); }
+function promptGridSearch(){
+  const q = prompt('ค้นหาข้อความในตาราง:', state.gridSearchQuery||'');
+  if(q !== null){ state.gridSearchQuery = q; render(); }
+}
+function toggleGridHideSystemCols(){ state.gridHideSystemCols = !state.gridHideSystemCols; render(); }
+function sortGridBy(dir){
+  if(dir && !gridSelected.field){ showToast('คลิกเซลล์ในคอลัมน์ที่ต้องการเรียงลำดับก่อน', true); return; }
+  state.gridSort = dir ? { field: gridSelected.field, dir } : { field:null, dir:'asc' };
+  render();
+}
+function exportGridCSV(){
+  const entity = state.gridEntity || 'debtors';
+  const headers = getGridHeaders(entity);
+  const rows = getGridDisplayRows(entity, headers);
+  const escapeCsv = v => { const s = String(v!==undefined&&v!==null?v:''); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const csv = [headers.join(',')].concat(rows.map(r=>headers.map(h=>escapeCsv(r[h])).join(','))).join('\n');
+  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = ENTITY_SHEET_REAL_NAME[entity]+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+async function runSetupFromWeb(){
+  try{
+    await apiPost('runSetup', {});
+    showToast('รันตั้งค่าเริ่มต้นระบบแล้ว (สร้างเฉพาะส่วนที่ยังไม่มี ไม่ทับข้อมูลเดิม)');
+    await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+function deleteColumnFromGrid(entity, label){
+  const field = (state.data.customFields[entity]||[]).find(f=>f.label===label);
+  if(!field){ showToast('ไม่พบข้อมูลคอลัมน์นี้ (อาจเป็นคอลัมน์หลักของระบบ ลบไม่ได้)', true); return; }
+  deleteCustomField(field.id, label);
+}
+
+let resizeState = null;
+function startColResize(e, entity, colIndex){
+  e.preventDefault();
+  e.stopPropagation();
+  const col = document.getElementById('col_'+entity+'_'+colIndex);
+  if(!col) return;
+  resizeState = { entity, colIndex, col, startX: e.clientX, startWidth: col.offsetWidth };
+  document.addEventListener('mousemove', onColResizeMove);
+  document.addEventListener('mouseup', onColResizeEnd);
+}
+function onColResizeMove(e){
+  if(!resizeState) return;
+  const newWidth = Math.max(50, resizeState.startWidth + (e.clientX - resizeState.startX));
+  resizeState.col.style.width = newWidth+'px';
+}
+async function onColResizeEnd(){
+  if(!resizeState) return;
+  const { entity, colIndex, col } = resizeState;
+  const width = col.getBoundingClientRect().width;
+  document.removeEventListener('mousemove', onColResizeMove);
+  document.removeEventListener('mouseup', onColResizeEnd);
+  resizeState = null;
+  const headers = getGridHeaders(entity);
+  const field = headers[colIndex];
+  if(!field) return;
+  state.gridColWidths[entity][field] = width;
+  try{ await apiPost('gridSetColumnWidth', {sheetKey: entity, field, width}); }catch(e){ /* เงียบไว้ ไม่รบกวนผู้ใช้ */ }
 }
 
 function setGridEntity(entity){ state.gridEntity = entity; render(); }
