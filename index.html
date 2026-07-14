@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>สมุดบัญชีหนี้</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Taviraj:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#E9E1CC;
+    --paper-line:#c9bfa0;
+    --card:#F5F0E1;
+    --ink:#20302c;
+    --ink-soft:#4b5a54;
+    --ledger:#2F5233;
+    --ledger-dark:#1f3a24;
+    --stamp-red:#a63a2e;
+    --stamp-green:#3b7a57;
+    --stamp-amber:#a6752f;
+    --brass:#a67c3d;
+    --border:#b9ad8c;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Sarabun',sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    background-image:
+      repeating-linear-gradient(180deg, transparent, transparent 34px, rgba(60,50,20,0.05) 35px);
+  }
+  h1,h2,h3,.display{ font-family:'Taviraj',serif; }
+  .mono{ font-family:'IBM Plex Mono',monospace; font-variant-numeric: tabular-nums; }
+
+  /* ---------- Layout ---------- */
+  #app{ display:flex; min-height:100vh; }
+  .sidebar{
+    width:210px; flex-shrink:0;
+    background:var(--ledger);
+    color:#eee5cf;
+    padding:22px 0;
+    display:flex; flex-direction:column;
+    border-right:6px double var(--brass);
+  }
+  .sidebar .brand{
+    font-family:'Taviraj',serif; font-weight:600; font-size:20px;
+    padding:0 20px 18px 20px; border-bottom:1px solid rgba(255,255,255,0.15);
+    margin-bottom:10px; letter-spacing:0.5px;
+  }
+  .sidebar .brand small{ display:block; font-family:'Sarabun'; font-size:11px; font-weight:400; opacity:0.7; margin-top:3px;}
+  .nav-item{
+    padding:12px 20px; cursor:pointer; font-size:14.5px;
+    border-left:4px solid transparent;
+    display:flex; align-items:center; gap:10px;
+    opacity:0.85;
+  }
+  .nav-item:hover{ background:rgba(255,255,255,0.06); }
+  .nav-item.active{
+    background:var(--ledger-dark); border-left:4px solid var(--brass);
+    opacity:1; font-weight:600;
+  }
+  .sidebar .footer-note{ margin-top:auto; padding:14px 20px; font-size:11px; opacity:0.55; }
+
+  main{ flex:1; padding:28px 36px; max-width:1180px; }
+  .topbar{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:22px; }
+  .topbar h1{ font-size:26px; margin:0; color:var(--ledger-dark); }
+  .user-chip{ font-size:13px; color:var(--ink-soft); display:flex; gap:12px; align-items:center;}
+  .user-chip button{ all:unset; cursor:pointer; color:var(--stamp-red); font-weight:600; }
+
+  /* ---------- Cards / receipt stub ---------- */
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:2px;
+    box-shadow:2px 3px 0 rgba(60,50,20,0.08);
+    padding:18px 20px;
+  }
+  .grid-summary{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:26px; }
+  .summary-card{ position:relative; padding:16px 18px 14px; }
+  .summary-card .label{ font-size:12px; color:var(--ink-soft); margin-bottom:6px;}
+  .summary-card .value{ font-size:24px; font-weight:600; color:var(--ledger-dark); }
+  .summary-card::before{
+    content:''; position:absolute; left:0; top:8px; bottom:8px; width:4px; background:var(--brass);
+  }
+
+  .stub{
+    position:relative;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-bottom:2px dashed var(--border);
+    padding:16px 18px 18px;
+    margin-bottom:14px;
+    box-shadow:2px 3px 0 rgba(60,50,20,0.06);
+  }
+  .stub::before, .stub::after{
+    content:''; position:absolute; bottom:-8px; width:14px; height:14px; border-radius:50%;
+    background:var(--paper); border:1px solid var(--border);
+  }
+  .stub::before{ left:-8px; } .stub::after{ right:-8px; }
+  .stub-row{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
+  .stub-title{ font-family:'Taviraj',serif; font-size:17px; font-weight:600; color:var(--ledger-dark); }
+  .stub-sub{ font-size:12.5px; color:var(--ink-soft); margin-top:2px; }
+  .stub-amount{ font-size:19px; font-weight:600; }
+
+  .stamp{
+    display:inline-block; padding:4px 10px; border:2px solid; border-radius:4px;
+    font-family:'Taviraj',serif; font-weight:700; font-size:12px; letter-spacing:1px;
+    transform:rotate(-8deg); text-transform:uppercase;
+  }
+  .stamp.unpaid{ color:var(--stamp-amber); border-color:var(--stamp-amber); }
+  .stamp.overdue{ color:var(--stamp-red); border-color:var(--stamp-red); }
+  .stamp.paid{ color:var(--stamp-green); border-color:var(--stamp-green); }
+  .stamp.partial{ color:var(--brass); border-color:var(--brass); }
+
+  /* ---------- Forms ---------- */
+  label{ display:block; font-size:12.5px; color:var(--ink-soft); margin:10px 0 4px; }
+  input, select, textarea{
+    width:100%; padding:9px 10px; font-family:'Sarabun',sans-serif; font-size:14px;
+    border:1px solid var(--border); border-radius:2px; background:#fffdf7; color:var(--ink);
+  }
+  input:focus, select:focus, textarea:focus{ outline:2px solid var(--brass); outline-offset:1px; }
+  .btn{
+    font-family:'Sarabun',sans-serif; font-weight:600; font-size:14px;
+    padding:9px 16px; border-radius:2px; border:1px solid var(--ledger-dark);
+    background:var(--ledger); color:#f3ecd8; cursor:pointer;
+  }
+  .btn:hover{ background:var(--ledger-dark); }
+  .btn.secondary{ background:transparent; color:var(--ledger-dark); }
+  .btn.danger{ background:var(--stamp-red); border-color:var(--stamp-red); color:#fff; }
+  .btn:disabled{ opacity:0.5; cursor:not-allowed; }
+  .btn-row{ display:flex; gap:10px; margin-top:14px; }
+
+  table{ width:100%; border-collapse:collapse; }
+  th{ text-align:left; font-size:12px; color:var(--ink-soft); padding:8px 10px; border-bottom:2px solid var(--brass); }
+  td{ padding:9px 10px; border-bottom:1px solid var(--paper-line); font-size:14px; }
+  tr:hover td{ background:rgba(166,124,61,0.06); }
+
+  .empty-state{ text-align:center; padding:50px 20px; color:var(--ink-soft); }
+  .empty-state .display{ font-size:20px; color:var(--ledger-dark); margin-bottom:6px; }
+
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(20,25,20,0.45); display:flex;
+    align-items:center; justify-content:center; z-index:50;
+  }
+  .modal{
+    background:var(--card); border:1px solid var(--border); width:420px; max-width:92vw;
+    padding:22px 24px; box-shadow:4px 6px 0 rgba(0,0,0,0.15);
+    max-height:88vh; overflow-y:auto;
+  }
+  .modal h3{ margin:0 0 4px; color:var(--ledger-dark); }
+
+  .toast{
+    position:fixed; bottom:20px; right:20px; background:var(--ledger-dark); color:#f3ecd8;
+    padding:12px 18px; border-radius:3px; font-size:13.5px; z-index:100;
+    box-shadow:2px 3px 6px rgba(0,0,0,0.25);
+  }
+  .toast.error{ background:var(--stamp-red); }
+
+  .login-wrap{ min-height:100vh; display:flex; align-items:center; justify-content:center; width:100%; }
+  .login-card{ width:340px; padding:32px 30px; text-align:center; }
+  .login-card h1{ font-size:22px; margin:0 0 4px; color:var(--ledger-dark); }
+  .login-card p{ font-size:12.5px; color:var(--ink-soft); margin:0 0 20px; }
+  .ledger-rule{ height:1px; background:var(--border); margin:14px 0; }
+
+  .tag-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  .setting-hint{ font-size:12px; color:var(--ink-soft); margin-top:4px; line-height:1.6;}
+  code{ background:rgba(0,0,0,0.06); padding:1px 5px; border-radius:2px; font-size:12.5px; }
+  .section-title{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+
+  /* ---------- Sheet-like grid (หน้าตาร่างเลียนแบบ Google Sheets) ---------- */
+  .sheet-toolbar{
+    background:var(--ledger); color:#f3ecd8; padding:9px 14px;
+    display:flex; align-items:center; gap:10px; font-size:13px;
+  }
+  .sheet-toolbar .dot{ width:8px; height:8px; border-radius:50%; background:#6fbf73; display:inline-block; flex-shrink:0; }
+  .formula-bar{
+    display:flex; align-items:center; gap:10px; background:#fffdf7;
+    border-bottom:1px solid var(--border); padding:6px 10px;
+  }
+  .formula-bar .ref-box{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; background:var(--card);
+    border:1px solid var(--border); padding:3px 9px; border-radius:2px; min-width:40px; text-align:center;
+  }
+  .formula-bar .fx{ font-style:italic; color:var(--ink-soft); font-size:13px; }
+  .formula-bar .val-box{
+    flex:1; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .sheet-grid-wrap{ overflow:auto; max-height:58vh; }
+  table.sheet-table{ border-collapse:collapse; width:auto; background:#fffdf7; }
+  table.sheet-table th, table.sheet-table td{ border:1px solid #d9d0b3; padding:0; }
+  table.sheet-table th{
+    background:#efe8d4; color:var(--ink-soft); font-size:11px; font-weight:600;
+    text-align:center; position:sticky; top:0; z-index:2; padding:5px 8px;
+  }
+  table.sheet-table th.row-num-head{ left:0; z-index:3; min-width:34px; }
+  table.sheet-table td.row-num{
+    background:#efe8d4; color:var(--ink-soft); text-align:center; font-size:11px;
+    position:sticky; left:0; z-index:1; padding:5px 6px; font-family:'IBM Plex Mono',monospace;
+  }
+  table.sheet-table td.cell{ padding:6px 9px; font-size:13px; min-width:120px; }
+  table.sheet-table td.cell:focus{ outline:2px solid var(--brass); outline-offset:-2px; background:#fffdf0; }
+  table.sheet-table td.cell.readonly-cell{ background:rgba(0,0,0,0.045); color:var(--ink-soft); }
+  .sheet-tabs{ display:flex; gap:2px; background:#efe8d4; border-top:1px solid var(--border); padding:5px 8px 0; }
+  .sheet-tab{
+    padding:7px 16px; font-size:12.5px; cursor:pointer; border:1px solid transparent; border-bottom:none;
+    border-radius:4px 4px 0 0; color:var(--ink-soft);
+  }
+  .sheet-tab.active{ background:#fffdf7; border-color:var(--border); color:var(--ledger-dark); font-weight:600; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ===================== State ===================== */
+const state = {
+  apiUrl: '',
+  user: null,
+  view: 'dashboard',
+  adminColumnEntity: 'invoices',
+  gridEntity: 'debtors',
+  data: { dashboard:null, debtors:[], invoices:[], payments:[], notifyLog:[], users:[], lineConfig:null, lineContacts:[], customFields:{debtors:[],invoices:[],payments:[]} },
+  loading:false,
+};
+
+/* ===================== ตั้งค่า Web App URL เริ่มต้น (ไม่บังคับ) =====================
+   ใส่ URL ที่ได้จากการ Deploy Google Apps Script ลงในเครื่องหมายคำพูดด้านล่างได้ถ้าต้องการค่าเริ่มต้นตายตัว
+   แต่ผู้ดูแลระบบ (role admin) สามารถเปลี่ยน URL ได้จริงจากหน้าเว็บ เมนู "ผู้ดูแลระบบ" โดยไม่ต้องแก้โค้ด — ค่าที่ตั้งจากหน้าเว็บจะมีผลเหนือค่านี้ */
+const DEFAULT_API_URL = '';
+
+/* ===================== Storage helpers =====================
+   ทำงานได้ 2 โหมดอัตโนมัติ:
+   1) เปิดในหน้าต่าง artifact ของ Claude.ai -> ใช้ window.storage (ผูกกับบัญชี ใช้ได้ทุกเครื่อง/บราวเซอร์ที่ล็อกอินบัญชีเดียวกัน — เปลี่ยนที่เดียวมีผลทุกเครื่องจริง)
+   2) เปิดจากไฟล์ที่ host เอง (GitHub Pages, server บริษัท ฯลฯ) -> ใช้ localStorage ของบราวเซอร์นั้น (มีผลเฉพาะเครื่อง/บราวเซอร์ที่กดบันทึก) */
+const hasCloudStorage = (typeof window.storage !== 'undefined');
+
+async function storageGet(key, shared=false){
+  if(hasCloudStorage){
+    try{ const r = await window.storage.get(key, shared); return r ? r.value : null; }
+    catch(e){ return null; }
+  }
+  try{ return localStorage.getItem(key); } catch(e){ return null; }
+}
+async function storageSet(key, value, shared=false){
+  if(hasCloudStorage){
+    try{ await window.storage.set(key, value, shared); return; } catch(e){ return; }
+  }
+  try{ localStorage.setItem(key, value); } catch(e){}
+}
+async function storageDelete(key, shared=false){
+  if(hasCloudStorage){
+    try{ await window.storage.delete(key, shared); return; } catch(e){ return; }
+  }
+  try{ localStorage.removeItem(key); } catch(e){}
+}
+
+async function loadConfig(){
+  const override = await storageGet('config:api_url', true);
+  state.apiUrl = override || DEFAULT_API_URL || '';
+}
+async function saveConfig(url){
+  state.apiUrl = url;
+  await storageSet('config:api_url', url, true);
+}
+
+/* ===================== API helpers ===================== */
+async function apiGet(action, params={}){
+  const qs = new URLSearchParams({ action, ...params }).toString();
+  const res = await fetch(`${state.apiUrl}?${qs}`, { method:'GET' });
+  const json = await res.json();
+  if(!json.ok) throw new Error(json.error || 'เกิดข้อผิดพลาด');
+  return json.data;
+}
+async function apiPost(action, payload={}){
+  const res = await fetch(state.apiUrl, {
+    method:'POST',
+    headers:{ 'Content-Type':'text/plain;charset=utf-8' }, // เลี่ยง CORS preflight
+    body: JSON.stringify({ action, ...payload })
+  });
+  const json = await res.json();
+  if(!json.ok) throw new Error(json.error || 'เกิดข้อผิดพลาด');
+  return json.data;
+}
+
+function showToast(msg, isError=false){
+  const el = document.createElement('div');
+  el.className = 'toast' + (isError?' error':'');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=> el.remove(), 3200);
+}
+
+/* ===================== Formatting ===================== */
+function thb(n){ return Number(n||0).toLocaleString('th-TH', {maximumFractionDigits:2}); }
+function fmtDate(d){
+  if(!d) return '-';
+  const dt = new Date(d);
+  if(isNaN(dt)) return String(d);
+  return dt.toLocaleDateString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+function isOverdue(inv){ return inv.status!=='paid' && new Date(inv.dueDate) < new Date(); }
+function statusLabel(inv){
+  if(inv.status==='paid') return {cls:'paid', text:'ชำระแล้ว'};
+  if(isOverdue(inv)) return {cls:'overdue', text:'เกินกำหนด'};
+  if(inv.status==='partial') return {cls:'partial', text:'จ่ายบางส่วน'};
+  return {cls:'unpaid', text:'ค้างชำระ'};
+}
+
+/* ===================== Data loading ===================== */
+async function refreshAll(){
+  if(!state.apiUrl) return;
+  state.loading = true; render();
+  try{
+    const isAdmin = state.user && state.user.role === 'admin';
+    const [dash, debtors, invoices, payments, notifyLog, users, lineConfig, lineContacts, cfDebtors, cfInvoices, cfPayments] = await Promise.all([
+      apiGet('dashboard'), apiGet('listDebtors'), apiGet('listInvoices'), apiGet('listPayments'), apiGet('listNotifyLog'),
+      isAdmin ? apiGet('listUsers') : Promise.resolve(state.data.users||[]),
+      isAdmin ? apiGet('getLineConfig') : Promise.resolve(state.data.lineConfig),
+      isAdmin ? apiGet('listLineContacts') : Promise.resolve(state.data.lineContacts||[]),
+      apiGet('listCustomFields', {sheetKey:'debtors'}),
+      apiGet('listCustomFields', {sheetKey:'invoices'}),
+      apiGet('listCustomFields', {sheetKey:'payments'})
+    ]);
+    const customFields = { debtors: cfDebtors, invoices: cfInvoices, payments: cfPayments };
+    state.data = { dashboard:dash, debtors, invoices, payments, notifyLog, users, lineConfig, lineContacts, customFields };
+  }catch(e){
+    showToast('โหลดข้อมูลไม่สำเร็จ: ' + e.message, true);
+  }
+  state.loading = false; render();
+}
+
+/* ===================== Views ===================== */
+function renderSidebar(){
+  const items = [
+    ['dashboard','ภาพรวม'],
+    ['debtors','ลูกหนี้'],
+    ['invoices','ใบแจ้งหนี้'],
+    ['payments','การชำระเงิน'],
+    ['notify','ประวัติแจ้งเตือน'],
+    ['grid','ตารางข้อมูล (Excel)'],
+  ];
+  if(state.user && state.user.role === 'admin'){
+    items.push(['admin','ผู้ดูแลระบบ']);
+  }
+  return `
+  <div class="sidebar">
+    <div class="brand">สมุดบัญชีหนี้<small>ระบบแจ้งหนี้ &amp; ติดตามการชำระ</small></div>
+    ${items.map(([k,label])=>`<div class="nav-item ${state.view===k?'active':''}" onclick="setView('${k}')">${label}</div>`).join('')}
+    <div class="footer-note">เชื่อมต่อ Google Sheet + LINE</div>
+  </div>`;
+}
+
+function renderTopbar(title){
+  return `
+  <div class="topbar">
+    <h1 class="display">${title}</h1>
+    <div class="user-chip">
+      <span>${state.user ? 'ผู้ใช้: '+state.user.name+' ('+state.user.role+')' : ''}</span>
+      <button onclick="logout()">ออกจากระบบ</button>
+    </div>
+  </div>`;
+}
+
+function viewDashboard(){
+  const d = state.data.dashboard;
+  return `
+  ${renderTopbar('ภาพรวมบัญชี')}
+  ${!d ? emptyState('ยังไม่มีข้อมูล','โหลดข้อมูลจาก Google Sheet ไม่สำเร็จ หรือยังไม่ได้ตั้งค่า') : `
+  <div class="grid-summary">
+    <div class="card summary-card"><div class="label">จำนวนลูกหนี้</div><div class="value mono">${d.totalDebtors}</div></div>
+    <div class="card summary-card"><div class="label">ยอดค้างชำระรวม</div><div class="value mono">฿${thb(d.totalOutstanding)}</div></div>
+    <div class="card summary-card"><div class="label">รายการเกินกำหนด</div><div class="value mono" style="color:var(--stamp-red)">${d.overdueCount}</div></div>
+    <div class="card summary-card"><div class="label">รับชำระเดือนนี้</div><div class="value mono" style="color:var(--stamp-green)">฿${thb(d.paidThisMonth)}</div></div>
+  </div>
+  <div class="card">
+    <div class="section-title"><h3 class="display" style="margin:0;">ใบแจ้งหนี้ล่าสุด</h3></div>
+    ${renderInvoiceList(state.data.invoices.slice(-6).reverse(), {compact:true})}
+  </div>`}`;
+}
+
+function emptyState(title, sub){
+  return `<div class="card empty-state"><div class="display">${title}</div><div>${sub}</div></div>`;
+}
+
+function renderInvoiceList(invoices, opts={}){
+  if(!invoices.length) return emptyState('ยังไม่มีใบแจ้งหนี้','เริ่มเพิ่มใบแจ้งหนี้ได้จากแท็บ "ใบแจ้งหนี้"');
+  const fields = state.data.customFields.invoices || [];
+  return invoices.map(inv=>{
+    const debtor = state.data.debtors.find(x=>String(x.id)===String(inv.debtorId));
+    const st = statusLabel(inv);
+    const extras = fields.filter(f => inv[f.label] !== undefined && inv[f.label] !== '');
+    return `
+    <div class="stub">
+      <div class="stub-row">
+        <div>
+          <div class="stub-title">${debtor?debtor.name:'(ไม่พบลูกหนี้)'} <span style="font-weight:400;font-size:13px;color:var(--ink-soft);">#${inv.invoiceNo||''}</span></div>
+          <div class="stub-sub">ครบกำหนด ${fmtDate(inv.dueDate)}${inv.note? ' · '+inv.note:''}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="stub-amount mono">฿${thb(inv.amount)}</div>
+          <div class="stamp ${st.cls}" style="margin-top:6px;">${st.text}</div>
+        </div>
+      </div>
+      ${extras.length ? `
+      <div class="tag-row" style="margin-top:10px;">
+        ${extras.map(f=>`<span class="setting-hint" style="background:rgba(166,124,61,0.1); border:1px solid var(--border); padding:3px 8px; border-radius:3px; margin:0;">${f.label}: <span class="mono">${f.type==='number'||f.type==='formula' ? thb(inv[f.label]) : inv[f.label]}</span></span>`).join('')}
+      </div>` : ''}
+      ${opts.compact? '' : `
+      <div class="btn-row">
+        <button class="btn secondary" onclick="openPaymentModal('${inv.id}')">บันทึกการชำระ</button>
+        <button class="btn secondary" onclick="reminder('${inv.id}')" ${inv.status==='paid'?'disabled':''}>ส่งแจ้งเตือน LINE</button>
+      </div>`}
+    </div>`;
+  }).join('');
+}
+
+function viewDebtors(){
+  const rows = state.data.debtors;
+  const customFields = state.data.customFields.debtors || [];
+  return `
+  ${renderTopbar('รายชื่อลูกหนี้')}
+  <div class="section-title"><span></span><button class="btn" onclick="openDebtorModal()">+ เพิ่มลูกหนี้</button></div>
+  <div class="card">
+    ${!rows.length ? emptyState('ยังไม่มีลูกหนี้','เพิ่มลูกหนี้รายแรกได้เลย') : `
+    <table>
+      <thead><tr><th>ชื่อ</th><th>เบอร์โทร</th><th>LINE User ID</th><th>หมายเหตุ</th>${customFields.map(f=>`<th>${f.label}</th>`).join('')}<th></th></tr></thead>
+      <tbody>
+        ${rows.map(r=>`
+        <tr>
+          <td>${r.name}</td>
+          <td class="mono">${r.phone||'-'}</td>
+          <td class="mono" style="font-size:12px;">${r.lineUserId? r.lineUserId : '<span style=\"color:var(--stamp-red)\">ยังไม่ผูก</span>'}</td>
+          <td>${r.note||'-'}</td>
+          ${customFields.map(f=>`<td class="${f.type==='number'||f.type==='formula'?'mono':''}">${r[f.label]!==undefined && r[f.label]!==''? (f.type==='number'||f.type==='formula'? thb(r[f.label]) : r[f.label]) : '-'}</td>`).join('')}
+          <td><button class="btn secondary" onclick="openDebtorModal('${r.id}')">แก้ไข</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`}
+  </div>`;
+}
+
+function viewInvoices(){
+  return `
+  ${renderTopbar('ใบแจ้งหนี้')}
+  <div class="section-title"><span></span><button class="btn" onclick="openInvoiceModal()">+ สร้างใบแจ้งหนี้</button></div>
+  ${renderInvoiceList(state.data.invoices.slice().reverse())}
+  `;
+}
+
+function viewPayments(){
+  const rows = state.data.payments.slice().reverse();
+  return `
+  ${renderTopbar('ประวัติการชำระเงิน')}
+  <div class="card">
+    ${!rows.length ? emptyState('ยังไม่มีรายการชำระ','บันทึกการชำระได้จากหน้าใบแจ้งหนี้') : `
+    <table>
+      <thead><tr><th>วันที่ชำระ</th><th>ลูกหนี้</th><th>จำนวนเงิน</th><th>ช่องทาง</th><th>ผู้บันทึก</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(p=>{
+          const debtor = state.data.debtors.find(x=>String(x.id)===String(p.debtorId));
+          return `<tr>
+            <td>${fmtDate(p.paidDate||p.createdAt)}</td>
+            <td>${debtor?debtor.name:'-'}</td>
+            <td class="mono">฿${thb(p.amount)}</td>
+            <td>${p.method||'-'}</td>
+            <td>${p.recordedBy||'-'}</td>
+            <td><button class="btn secondary" onclick="confirmPayment('${p.id}')">ส่งใบยืนยัน LINE</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`}
+  </div>`;
+}
+
+function viewNotify(){
+  const rows = state.data.notifyLog.slice().reverse();
+  return `
+  ${renderTopbar('ประวัติการแจ้งเตือน LINE')}
+  <div class="card">
+    ${!rows.length ? emptyState('ยังไม่มีการแจ้งเตือน','ประวัติจะขึ้นที่นี่เมื่อส่งแจ้งเตือนผ่าน LINE') : `
+    <table>
+      <thead><tr><th>เวลา</th><th>ประเภท</th><th>ลูกหนี้</th><th>สถานะ</th><th>โดย</th></tr></thead>
+      <tbody>
+        ${rows.map(n=>{
+          const debtor = state.data.debtors.find(x=>String(x.id)===String(n.debtorId));
+          return `<tr>
+            <td class="mono" style="font-size:12.5px;">${fmtDate(n.sentAt)}</td>
+            <td>${n.type==='reminder'?'แจ้งเตือนหนี้':'ยืนยันรับชำระ'}</td>
+            <td>${debtor?debtor.name:'-'}</td>
+            <td>${n.status==='success'? '<span class="stamp paid" style="transform:none;">สำเร็จ</span>' : '<span class="stamp overdue" style="transform:none;">ล้มเหลว</span>'}</td>
+            <td>${n.sentBy||'-'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`}
+  </div>`;
+}
+
+const CORE_FIELDS_BY_ENTITY = {
+  debtors: ['name','phone','lineUserId','note'],
+  invoices: ['debtorId','invoiceNo','amount','issueDate','dueDate','status','note'],
+  payments: ['invoiceId','debtorId','amount','paidDate','method','note']
+};
+const ENTITY_LABEL_TH = { debtors:'ลูกหนี้', invoices:'ใบแจ้งหนี้', payments:'การชำระเงิน' };
+
+const ENTITY_SHEET_REAL_NAME = { debtors:'Debtors', invoices:'Invoices', payments:'Payments' };
+
+function colLetter(n){ // n เป็นเลขคอลัมน์แบบ 1-indexed ให้ผลเหมือนหัวคอลัมน์จริงใน Google Sheets (A, B, ... Z, AA, AB, ...)
+  let s='';
+  while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); }
+  return s;
+}
+
+function viewGrid(){
+  const entity = state.gridEntity || 'debtors';
+  const rows = state.data[entity] || [];
+  const customFields = state.data.customFields[entity] || [];
+  const formulaLabels = customFields.filter(f=>f.type==='formula').map(f=>f.label);
+  const headers = rows.length
+    ? Object.keys(rows[0])
+    : ['id'].concat(CORE_FIELDS_BY_ENTITY[entity]||[]).concat(['createdAt']).concat(customFields.map(f=>f.label));
+
+  return `
+  ${renderTopbar('ตารางข้อมูล')}
+  <p class="setting-hint" style="margin-bottom:10px;">หน้านี้คือ Google Sheet ตัวจริงที่ซิงค์กันสด — แก้ที่นี่หรือแก้ในตัว Google Sheet เองก็ได้ ข้อมูลจะตรงกันเสมอ (คอลัมน์/แถวตรงกับที่เห็นในชีทจริงทุกตัวอักษร)</p>
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div class="sheet-toolbar">
+      <span class="dot"></span> เชื่อมต่อสด กับแท็บ <span class="mono">${ENTITY_SHEET_REAL_NAME[entity]}</span>
+      <span style="margin-left:auto; display:flex; gap:8px;">
+        <button class="btn secondary" style="padding:5px 12px; font-size:12.5px;" onclick="gridAddRow()">+ แถวใหม่</button>
+        <button class="btn secondary" style="padding:5px 12px; font-size:12.5px;" onclick="openAddColumnModal('${entity}')">+ คอลัมน์</button>
+      </span>
+    </div>
+    <div class="formula-bar">
+      <span class="ref-box" id="fxRef">-</span>
+      <span class="fx">fx</span>
+      <span class="val-box" id="fxVal"></span>
+    </div>
+    <div class="sheet-grid-wrap">
+      ${!rows.length ? emptyState('ยังไม่มีข้อมูล','กด "+ แถวใหม่" เพื่อเริ่มเพิ่มแถวแรก') : `
+      <table class="sheet-table">
+        <thead><tr><th class="row-num-head"></th>${headers.map((h,i)=>`<th title="${h}">${colLetter(i+1)}</th>`).join('')}<th></th></tr></thead>
+        <tbody>
+          ${rows.map((row,ri)=>`
+          <tr>
+            <td class="row-num">${ri+2}</td>
+            ${headers.map((h,ci)=>{
+              const readOnly = (h==='id' || h==='createdAt' || formulaLabels.indexOf(h)!==-1);
+              const val = (row[h] !== undefined && row[h] !== null) ? row[h] : '';
+              const ref = colLetter(ci+1) + (ri+2);
+              return `<td class="cell ${readOnly?'readonly-cell':''}" ${readOnly?'':'contenteditable="true"'}
+                onfocus="updateFormulaBar(this,'${ref}')"
+                ${readOnly?'':`onblur="handleGridCellEdit(this,'${entity}','${row.id}','${h}')"`}
+              >${val}</td>`;
+            }).join('')}
+            <td style="text-align:center;"><button class="btn danger" style="padding:2px 8px; font-size:11px;" onclick="gridDeleteRow('${entity}','${row.id}')">ลบ</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`}
+    </div>
+    <div class="sheet-tabs">
+      ${[['debtors','Debtors'],['invoices','Invoices'],['payments','Payments']].map(([k,label])=>
+        `<div class="sheet-tab ${entity===k?'active':''}" onclick="setGridEntity('${k}')">${label}</div>`
+      ).join('')}
+    </div>
+  </div>`;
+}
+
+function updateFormulaBar(el, ref){
+  const refBox = document.getElementById('fxRef');
+  const valBox = document.getElementById('fxVal');
+  if(refBox) refBox.textContent = ref;
+  if(valBox) valBox.textContent = el.textContent;
+}
+
+function setGridEntity(entity){ state.gridEntity = entity; render(); }
+
+async function gridAddRow(){
+  const entity = state.gridEntity || 'debtors';
+  try{
+    await apiPost('gridAddRow', {sheetKey: entity});
+    showToast('เพิ่มแถวใหม่แล้ว ซิงค์กับ Google Sheet เรียบร้อย');
+    await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+async function gridDeleteRow(entity, id){
+  if(!confirm('ลบแถวนี้ออกจากระบบและจาก Google Sheet ใช่หรือไม่?')) return;
+  try{
+    await apiPost('gridDeleteRow', {sheetKey: entity, id});
+    showToast('ลบแถวแล้ว');
+    await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+async function handleGridCellEdit(el, entity, id, field){
+  const value = el.textContent.trim();
+  try{
+    await apiPost('gridUpdateCell', {sheetKey: entity, id, field, value});
+    await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+function viewAdmin(){
+  if(!state.user || state.user.role !== 'admin'){
+    return `${renderTopbar('ไม่มีสิทธิ์เข้าถึง')}${emptyState('เฉพาะผู้ดูแลระบบ','เมนูนี้สำหรับผู้ใช้ role admin เท่านั้น')}`;
+  }
+  const users = state.data.users || [];
+  const lineConfig = state.data.lineConfig;
+  const columnFields = state.data.customFields[state.adminColumnEntity||'invoices'] || [];
+  const unlinkedContacts = (state.data.lineContacts||[]).filter(c => !c.linkedDebtorId);
+  return `
+  ${renderTopbar('ผู้ดูแลระบบ')}
+
+  <div class="card" style="max-width:640px; margin-bottom:20px;">
+    <h3 class="display" style="margin-top:0;">การเชื่อมต่อระบบ (Google Apps Script)</h3>
+    <p class="setting-hint">Web App URL ที่ได้จากการ Deploy Apps Script — กดบันทึกแล้วมีผลใช้งานได้ทันที ไม่ต้องแก้โค้ดหรือ deploy ใหม่</p>
+    <input id="apiUrlInput" value="${state.apiUrl||''}" placeholder="https://script.google.com/macros/s/xxx/exec">
+    <div class="btn-row">
+      <button class="btn" onclick="handleSaveSettings()">บันทึกและใช้งานทันที</button>
+    </div>
+    <p class="setting-hint">${hasCloudStorage ? 'เปิดผ่าน Claude.ai: การเปลี่ยนนี้มีผลกับทุกเครื่อง/บราวเซอร์ที่ล็อกอินบัญชีเดียวกันทันที' : 'เปิดแบบ host เอง: การเปลี่ยนนี้มีผลเฉพาะเครื่อง/บราวเซอร์นี้ (เก็บด้วย localStorage) เครื่องอื่นจะยังใช้ค่าที่ตั้งไว้ในไฟล์ (DEFAULT_API_URL) จนกว่าจะกดบันทึกจากเครื่องนั้นด้วย'}</p>
+    <div class="ledger-rule"></div>
+  </div>
+
+  <div class="card" style="max-width:640px; margin-bottom:20px;">
+    <h3 class="display" style="margin-top:0;">ตั้งค่า LINE Official Account</h3>
+    <p class="setting-hint">
+      สถานะ: ${lineConfig && lineConfig.configured
+        ? `<span class="stamp paid" style="transform:none;">เชื่อมต่อแล้ว</span> <span class="mono" style="font-size:12px;">${lineConfig.masked}</span>`
+        : '<span class="stamp overdue" style="transform:none;">ยังไม่ได้ตั้งค่า</span>'}
+    </p>
+    <label>Channel Access Token</label>
+    <input id="lineTokenInput" type="text" placeholder="วาง Channel Access Token จาก LINE Developers Console">
+    <div class="btn-row">
+      <button class="btn" onclick="saveLineConfig()">บันทึกและใช้งานทันที</button>
+    </div>
+    <div class="ledger-rule"></div>
+    <label>Webhook URL (นำไปตั้งใน LINE Developers Console &gt; Messaging API &gt; Webhook URL)</label>
+    <div class="mono" style="background:#fffdf7; border:1px solid var(--border); padding:9px 10px; font-size:12.5px; word-break:break-all;">${state.apiUrl||'(ยังไม่ได้ตั้งค่า Web App URL)'}</div>
+    <p class="setting-hint">เปิด "Use webhook" ในหน้า Messaging API ด้วย ระบบจะดึง LINE User ID ของลูกหนี้ที่แอดไลน์ OA มาแสดงในตาราง "ผู้ติดต่อ LINE ที่ยังไม่ได้ผูก" ด้านล่างให้อัตโนมัติ</p>
+  </div>
+
+  <div class="section-title"><h3 class="display" style="margin:0;">ผู้ติดต่อ LINE ที่ยังไม่ได้ผูกกับลูกหนี้</h3></div>
+  <div class="card" style="margin-bottom:20px;">
+    ${!unlinkedContacts.length ? emptyState('ยังไม่มีผู้ติดต่อใหม่','เมื่อลูกหนี้แอดไลน์ OA แล้ว รายชื่อจะขึ้นที่นี่ให้เลือกผูกกับลูกหนี้ในระบบ') : `
+    <table>
+      <thead><tr><th>ชื่อบน LINE</th><th>LINE User ID</th><th>พบล่าสุด</th><th>ผูกกับลูกหนี้</th></tr></thead>
+      <tbody>
+        ${unlinkedContacts.map(c=>`
+        <tr>
+          <td>${c.displayName||'(ไม่ทราบชื่อ)'}</td>
+          <td class="mono" style="font-size:11.5px;">${c.lineUserId}</td>
+          <td>${fmtDate(c.lastSeenAt||c.firstSeenAt)}</td>
+          <td>
+            <select id="link_select_${c.id}" style="display:inline-block; width:auto; min-width:160px;">
+              <option value="">-- เลือกลูกหนี้ --</option>
+              ${state.data.debtors.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}
+            </select>
+            <button class="btn secondary" onclick="linkContact('${c.id}')">ผูก</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`}
+  </div>
+
+  <div class="section-title"><h3 class="display" style="margin:0;">คอลัมน์ข้อมูล (เชื่อมกับ Google Sheet โดยตรง)</h3><button class="btn" onclick="openAddColumnModal('${state.adminColumnEntity||'invoices'}')">+ เพิ่มคอลัมน์</button></div>
+  <div class="card" style="margin-bottom:20px;">
+    <p class="setting-hint">เพิ่ม/ลบคอลัมน์ที่นี่จะไปเพิ่ม/ลบคอลัมน์จริงในแท็บที่เลือกของ Google Sheet ทันที — เลือกชนิด "สูตรคำนวณ" เพื่อให้ Google Sheets คำนวณอัตโนมัติเหมือนสูตร Excel (เช่น ดอกเบี้ยผิดนัด, ค่าปรับ) โดยอ้างอิงคอลัมน์อื่นด้วย <code>{ชื่อคอลัมน์}</code></p>
+    <div class="btn-row" style="margin-top:0; margin-bottom:14px;">
+      ${[['debtors','ลูกหนี้'],['invoices','ใบแจ้งหนี้'],['payments','การชำระเงิน']].map(([k,label])=>
+        `<button class="btn ${(state.adminColumnEntity||'invoices')===k?'':'secondary'}" onclick="setAdminColumnEntity('${k}')">${label}</button>`
+      ).join('')}
+    </div>
+    ${!columnFields.length ? emptyState('ยังไม่มีคอลัมน์เพิ่มเติม','กดปุ่ม "+ เพิ่มคอลัมน์" เพื่อเริ่มเพิ่ม') : `
+    <table>
+      <thead><tr><th>ชื่อคอลัมน์</th><th>ชนิด</th><th>สูตร</th><th></th></tr></thead>
+      <tbody>
+        ${columnFields.map(f=>`
+        <tr>
+          <td>${f.label}</td>
+          <td>${ {text:'ข้อความ', number:'ตัวเลข', date:'วันที่', formula:'สูตรคำนวณ'}[f.type] || f.type }</td>
+          <td class="mono" style="font-size:12px;">${f.formula||'-'}</td>
+          <td><button class="btn danger" onclick="deleteCustomField('${f.id}','${f.label.replace(/'/g,"")}')">ลบ</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`}
+  </div>
+
+  <div class="section-title"><h3 class="display" style="margin:0;">จัดการผู้ใช้งาน</h3><button class="btn" onclick="openUserModal()">+ เพิ่มผู้ใช้งาน</button></div>
+  <div class="card">
+    ${!users.length ? emptyState('ยังไม่มีผู้ใช้งาน','เพิ่มผู้ใช้คนแรกได้เลย') : `
+    <table>
+      <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อ-สกุล</th><th>สิทธิ์</th><th>สถานะ</th><th></th></tr></thead>
+      <tbody>
+        ${users.map(u=>`
+        <tr>
+          <td class="mono">${u.username}</td>
+          <td>${u.name}</td>
+          <td>${u.role==='admin'?'ผู้ดูแลระบบ':'เจ้าหน้าที่'}</td>
+          <td>${u.active? '<span class="stamp paid" style="transform:none;">ใช้งานอยู่</span>' : '<span class="stamp overdue" style="transform:none;">ปิดใช้งาน</span>'}</td>
+          <td>
+            <button class="btn secondary" onclick="openUserModal('${u.id}')">แก้ไข</button>
+            ${u.username === (state.user?state.user.username:'') ? '' : `<button class="btn ${u.active?'danger':'secondary'}" onclick="toggleUserActive('${u.id}', ${!u.active})">${u.active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`}
+  </div>`;
+}
+
+/* ===================== Modals ===================== */
+let modalHtml = '';
+function closeModal(){ modalHtml=''; render(); }
+
+function openDebtorModal(id){
+  const d = id ? state.data.debtors.find(x=>String(x.id)===String(id)) : {};
+  const customFields = state.data.customFields.debtors || [];
+  modalHtml = `
+  <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+    <div class="modal">
+      <h3 class="display">${id?'แก้ไขลูกหนี้':'เพิ่มลูกหนี้ใหม่'}</h3>
+      <label>ชื่อ-นามสกุล</label><input id="f_name" value="${d.name||''}">
+      <label>เบอร์โทร</label><input id="f_phone" value="${d.phone||''}">
+      <label>LINE User ID (ถ้ามี)</label><input id="f_line" value="${d.lineUserId||''}" placeholder="U1234567890abcdef...">
+      <label>หมายเหตุ</label><textarea id="f_note" rows="2">${d.note||''}</textarea>
+      ${customFields.map(f => f.type==='formula' ? `
+      <label>${f.label}</label>
+      <p class="setting-hint" style="margin-top:0;">คำนวณอัตโนมัติจากสูตร (${f.formula})</p>
+      ` : `
+      <label>${f.label}</label>
+      <input id="custom_debtor_${f.id}" type="${f.type==='number'?'number':(f.type==='date'?'date':'text')}" ${f.type==='number'?'step="0.01"':''} value="${d[f.label]!==undefined?d[f.label]:''}">
+      `).join('')}
+      <div class="btn-row">
+        <button class="btn" onclick="saveDebtor(${id?`'${id}'`:'null'})">บันทึก</button>
+        <button class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>`;
+  render();
+}
+async function saveDebtor(id){
+  const data = {
+    name: document.getElementById('f_name').value.trim(),
+    phone: document.getElementById('f_phone').value.trim(),
+    lineUserId: document.getElementById('f_line').value.trim(),
+    note: document.getElementById('f_note').value.trim(),
+  };
+  (state.data.customFields.debtors||[]).filter(f=>f.type!=='formula').forEach(f=>{
+    const el = document.getElementById('custom_debtor_'+f.id);
+    if(!el) return;
+    data[f.label] = f.type==='number' ? Number(el.value||0) : el.value;
+  });
+  if(!data.name){ showToast('กรุณากรอกชื่อ', true); return; }
+  try{
+    if(id) await apiPost('updateDebtor', {id, data});
+    else await apiPost('addDebtor', {data});
+    showToast('บันทึกข้อมูลลูกหนี้แล้ว');
+    closeModal(); await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+function openInvoiceModal(){
+  const options = state.data.debtors.map(d=>`<option value="${d.id}">${d.name}</option>`).join('');
+  const customFields = state.data.customFields.invoices || [];
+  return renderInvoiceModalHtml_(options, customFields);
+}
+function renderInvoiceModalHtml_(options, customFields){
+  modalHtml = `
+  <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+    <div class="modal">
+      <h3 class="display">สร้างใบแจ้งหนี้</h3>
+      ${!state.data.debtors.length ? '<p class="setting-hint">ยังไม่มีลูกหนี้ กรุณาเพิ่มลูกหนี้ก่อน</p>' : `
+      <label>ลูกหนี้</label><select id="f_debtor">${options}</select>
+      <label>เลขที่ใบแจ้งหนี้</label><input id="f_no" placeholder="INV-0001">
+      <label>จำนวนเงิน (บาท)</label><input id="f_amount" type="number" min="0" step="0.01">
+      <label>วันที่ออกใบแจ้งหนี้</label><input id="f_issue" type="date">
+      <label>ครบกำหนดชำระ</label><input id="f_due" type="date">
+      <label>หมายเหตุ</label><textarea id="f_inv_note" rows="2"></textarea>
+      ${customFields.map(f => f.type==='formula' ? `
+      <label>${f.label}</label>
+      <p class="setting-hint" style="margin-top:0;">คำนวณอัตโนมัติจากสูตร หลังบันทึกจะเห็นค่าในตาราง</p>
+      ` : `
+      <label>${f.label}</label>
+      <input id="custom_${f.id}" type="${f.type==='number'?'number':(f.type==='date'?'date':'text')}" ${f.type==='number'?'step="0.01"':''}>
+      `).join('')}
+      <div class="btn-row">
+        <button class="btn" onclick="saveInvoice()">บันทึก</button>
+        <button class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+      </div>`}
+    </div>
+  </div>`;
+  render();
+}
+async function saveInvoice(){
+  const data = {
+    debtorId: document.getElementById('f_debtor').value,
+    invoiceNo: document.getElementById('f_no').value.trim(),
+    amount: Number(document.getElementById('f_amount').value||0),
+    issueDate: document.getElementById('f_issue').value,
+    dueDate: document.getElementById('f_due').value,
+    note: document.getElementById('f_inv_note').value.trim(),
+    createdBy: state.user ? state.user.username : ''
+  };
+  (state.data.customFields.invoices||[]).filter(f=>f.type!=='formula').forEach(f=>{
+    const el = document.getElementById('custom_'+f.id);
+    if(!el) return;
+    data[f.label] = f.type==='number' ? Number(el.value||0) : el.value;
+  });
+  if(!data.debtorId || !data.amount || !data.dueDate){ showToast('กรุณากรอกข้อมูลให้ครบ', true); return; }
+  try{
+    await apiPost('addInvoice', {data});
+    showToast('สร้างใบแจ้งหนี้แล้ว');
+    closeModal(); await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+function openPaymentModal(invoiceId){
+  const inv = state.data.invoices.find(x=>String(x.id)===String(invoiceId));
+  const customFields = state.data.customFields.payments || [];
+  modalHtml = `
+  <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+    <div class="modal">
+      <h3 class="display">บันทึกการชำระเงิน</h3>
+      <p class="setting-hint">ใบแจ้งหนี้ #${inv?.invoiceNo||''} ยอด ฿${thb(inv?.amount)}</p>
+      <label>จำนวนที่ชำระ (บาท)</label><input id="p_amount" type="number" min="0" step="0.01" value="${inv?.amount||''}">
+      <label>วันที่ชำระ</label><input id="p_date" type="date" value="${new Date().toISOString().slice(0,10)}">
+      <label>ช่องทาง</label>
+      <select id="p_method">
+        <option>โอนเงิน</option><option>เงินสด</option><option>เช็ค</option><option>อื่นๆ</option>
+      </select>
+      <label>หมายเหตุ</label><textarea id="p_note" rows="2"></textarea>
+      ${customFields.map(f => f.type==='formula' ? `
+      <label>${f.label}</label>
+      <p class="setting-hint" style="margin-top:0;">คำนวณอัตโนมัติจากสูตร (${f.formula})</p>
+      ` : `
+      <label>${f.label}</label>
+      <input id="custom_payment_${f.id}" type="${f.type==='number'?'number':(f.type==='date'?'date':'text')}" ${f.type==='number'?'step="0.01"':''}>
+      `).join('')}
+      <div class="btn-row">
+        <button class="btn" onclick="savePayment('${invoiceId}')">บันทึก</button>
+        <button class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>`;
+  render();
+}
+async function savePayment(invoiceId){
+  const inv = state.data.invoices.find(x=>String(x.id)===String(invoiceId));
+  const data = {
+    invoiceId, debtorId: inv.debtorId,
+    amount: Number(document.getElementById('p_amount').value||0),
+    paidDate: document.getElementById('p_date').value,
+    method: document.getElementById('p_method').value,
+    note: document.getElementById('p_note').value.trim(),
+    recordedBy: state.user ? state.user.name : ''
+  };
+  (state.data.customFields.payments||[]).filter(f=>f.type!=='formula').forEach(f=>{
+    const el = document.getElementById('custom_payment_'+f.id);
+    if(!el) return;
+    data[f.label] = f.type==='number' ? Number(el.value||0) : el.value;
+  });
+  if(!data.amount){ showToast('กรุณากรอกจำนวนเงิน', true); return; }
+  try{
+    await apiPost('addPayment', {data});
+    showToast('บันทึกการชำระแล้ว');
+    closeModal(); await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+async function reminder(invoiceId){
+  try{
+    await apiPost('sendReminder', {invoiceId, userName: state.user?state.user.name:''});
+    showToast('ส่งแจ้งเตือน LINE แล้ว');
+    await refreshAll();
+  }catch(e){ showToast('ส่งไม่สำเร็จ: '+e.message, true); }
+}
+async function confirmPayment(paymentId){
+  try{
+    await apiPost('sendPaymentConfirm', {paymentId, userName: state.user?state.user.name:''});
+    showToast('ส่งใบยืนยันการชำระแล้ว');
+    await refreshAll();
+  }catch(e){ showToast('ส่งไม่สำเร็จ: '+e.message, true); }
+}
+
+async function handleSaveSettings(){
+  const url = document.getElementById('apiUrlInput').value.trim();
+  if(!url){ showToast('กรุณากรอก URL', true); return; }
+  await saveConfig(url);
+  showToast('บันทึกแล้ว กำลังโหลดข้อมูลจากปลายทางใหม่...');
+  await refreshAll();
+}
+
+async function saveLineConfig(){
+  const token = document.getElementById('lineTokenInput').value.trim();
+  if(!token){ showToast('กรุณากรอก Channel Access Token', true); return; }
+  try{
+    await apiPost('setLineConfig', {data:{token}});
+    showToast('บันทึกการตั้งค่า LINE แล้ว ใช้งานได้ทันที');
+    await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+async function linkContact(contactId){
+  const sel = document.getElementById('link_select_'+contactId);
+  const debtorId = sel ? sel.value : '';
+  if(!debtorId){ showToast('กรุณาเลือกลูกหนี้ก่อน', true); return; }
+  try{
+    await apiPost('linkLineContact', {contactId, debtorId});
+    showToast('ผูก LINE User ID กับลูกหนี้แล้ว');
+    await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+function openUserModal(id){
+  const u = id ? (state.data.users||[]).find(x=>String(x.id)===String(id)) : {};
+  modalHtml = `
+  <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+    <div class="modal">
+      <h3 class="display">${id?'แก้ไขผู้ใช้งาน':'เพิ่มผู้ใช้งานใหม่'}</h3>
+      <label>ชื่อผู้ใช้ (username)</label><input id="u_username" value="${u.username||''}" ${id?'disabled':''}>
+      <label>ชื่อ-สกุล</label><input id="u_name" value="${u.name||''}">
+      <label>สิทธิ์การใช้งาน</label>
+      <select id="u_role">
+        <option value="staff" ${u.role!=='admin'?'selected':''}>เจ้าหน้าที่ (staff)</option>
+        <option value="admin" ${u.role==='admin'?'selected':''}>ผู้ดูแลระบบ (admin)</option>
+      </select>
+      <label>${id?'รีเซ็ตรหัสผ่าน (เว้นว่างถ้าไม่เปลี่ยน)':'รหัสผ่าน'}</label>
+      <input id="u_password" type="text" placeholder="${id?'เว้นว่าง = ใช้รหัสเดิม':''}">
+      <div class="btn-row">
+        <button class="btn" onclick="saveUser(${id?`'${id}'`:'null'})">บันทึก</button>
+        <button class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>`;
+  render();
+}
+async function saveUser(id){
+  const username = document.getElementById('u_username').value.trim();
+  const name = document.getElementById('u_name').value.trim();
+  const role = document.getElementById('u_role').value;
+  const password = document.getElementById('u_password').value;
+  if(!username || !name){ showToast('กรุณากรอกข้อมูลให้ครบ', true); return; }
+  if(!id && !password){ showToast('กรุณาตั้งรหัสผ่าน', true); return; }
+  try{
+    if(id){
+      const data = { name, role };
+      if(password) data.password = password;
+      await apiPost('updateUser', {id, data});
+    }else{
+      await apiPost('addUser', {data:{username, name, role, password}});
+    }
+    showToast('บันทึกผู้ใช้งานแล้ว');
+    closeModal(); await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+async function toggleUserActive(id, newActive){
+  try{
+    await apiPost('updateUser', {id, data:{active:newActive}});
+    showToast(newActive?'เปิดใช้งานแล้ว':'ปิดใช้งานแล้ว');
+    await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+function setAdminColumnEntity(sheetKey){
+  state.adminColumnEntity = sheetKey;
+  render();
+}
+
+function openAddColumnModal(sheetKey){
+  sheetKey = sheetKey || state.adminColumnEntity || 'invoices';
+  const coreFields = CORE_FIELDS_BY_ENTITY[sheetKey] || [];
+  const existingLabels = (state.data.customFields[sheetKey]||[]).map(f=>f.label);
+  const allRefs = coreFields.concat(existingLabels);
+  modalHtml = `
+  <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+    <div class="modal">
+      <h3 class="display">เพิ่มคอลัมน์ (${ENTITY_LABEL_TH[sheetKey]})</h3>
+      <input type="hidden" id="col_sheetKey" value="${sheetKey}">
+      <label>ชื่อคอลัมน์ (จะไปเป็นหัวคอลัมน์จริงใน Google Sheet)</label>
+      <input id="col_label" placeholder="เช่น ดอกเบี้ยผิดนัด">
+      <label>ชนิดข้อมูล</label>
+      <select id="col_type" onchange="document.getElementById('col_formula_wrap').style.display = this.value==='formula' ? 'block':'none';">
+        <option value="text">ข้อความ</option>
+        <option value="number">ตัวเลข</option>
+        <option value="date">วันที่</option>
+        <option value="formula">สูตรคำนวณ (แบบ Excel/Google Sheets)</option>
+      </select>
+      <div id="col_formula_wrap" style="display:none;">
+        <label>สูตรคำนวณ</label>
+        <input id="col_formula" placeholder="เช่น {amount} * 0.02">
+        <p class="setting-hint">อ้างอิงคอลัมน์อื่นด้วย <code>{ชื่อคอลัมน์}</code> คอลัมน์ที่มีอยู่ตอนนี้: ${allRefs.map(r=>`<code>{${r}}</code>`).join(' ')}<br>
+        ระบบจะแปลงเป็นสูตร Google Sheets จริง (เช่น =D2*0.02) และคำนวณให้อัตโนมัติทุกแถว แก้ไขค่าคอลัมน์นี้ตรงๆ ไม่ได้เพราะเป็นค่าคำนวณ</p>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="saveCustomField()">บันทึก</button>
+        <button class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>`;
+  render();
+}
+async function saveCustomField(){
+  const sheetKey = document.getElementById('col_sheetKey').value;
+  const label = document.getElementById('col_label').value.trim();
+  const type = document.getElementById('col_type').value;
+  const formula = document.getElementById('col_formula') ? document.getElementById('col_formula').value.trim() : '';
+  if(!label){ showToast('กรุณาใส่ชื่อคอลัมน์', true); return; }
+  if(type==='formula' && !formula){ showToast('กรุณาใส่สูตรคำนวณ', true); return; }
+  try{
+    await apiPost('addCustomField', {data:{sheetKey, label, type, formula}});
+    showToast('เพิ่มคอลัมน์แล้ว ซิงค์กับ Google Sheet เรียบร้อย');
+    closeModal(); await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+async function deleteCustomField(id, label){
+  if(!confirm('ลบคอลัมน์ "'+label+'" ออกจากระบบและจาก Google Sheet ใช่หรือไม่? ข้อมูลในคอลัมน์นี้จะหายไปถาวร')) return;
+  try{
+    await apiPost('removeCustomField', {id});
+    showToast('ลบคอลัมน์แล้ว');
+    await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+/* ===================== Auth ===================== */
+async function handleLogin(e){
+  e.preventDefault();
+  const username = document.getElementById('l_user').value.trim();
+  const password = document.getElementById('l_pass').value;
+  const errBox = document.getElementById('loginErr');
+  errBox.textContent = '';
+  if(!state.apiUrl){ errBox.textContent = 'ยังไม่ได้ตั้งค่า Web App URL — ตั้งค่าก่อน'; return; }
+  try{
+    const user = await apiPost('login', {username, password});
+    state.user = user;
+    await storageSet('session:user', JSON.stringify(user), false);
+    state.view='dashboard';
+    await refreshAll();
+    render();
+  }catch(err){ errBox.textContent = err.message; }
+}
+function logout(){
+  state.user = null;
+  storageDelete('session:user', false).catch(()=>{});
+  render();
+}
+function setView(v){ state.view=v; render(); }
+
+function openLoginSettingsModal(){
+  modalHtml = `
+  <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+    <div class="modal">
+      <h3 class="display">ตั้งค่าการเชื่อมต่อ</h3>
+      <p class="setting-hint">วาง Google Apps Script Web App URL ที่ deploy ไว้แล้ว (ดูวิธีหาได้ในคู่มือ README_setup.md) กดบันทึกแล้วใช้งานได้ทันที</p>
+      <input id="loginApiUrlInput" value="${state.apiUrl||''}" placeholder="https://script.google.com/macros/s/xxx/exec">
+      <div class="btn-row">
+        <button class="btn" onclick="handleSaveSettingsFromLogin()">บันทึก</button>
+        <button class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>`;
+  render();
+}
+async function handleSaveSettingsFromLogin(){
+  const url = document.getElementById('loginApiUrlInput').value.trim();
+  if(!url){ showToast('กรุณากรอก URL', true); return; }
+  await saveConfig(url);
+  showToast('บันทึกการตั้งค่าแล้ว');
+  closeModal();
+}
+
+/* ===================== Root render ===================== */
+function render(){
+  const app = document.getElementById('app');
+  if(!state.user){
+    app.innerHTML = `
+    <div class="login-wrap">
+      <div class="card login-card" style="position:relative;">
+        <button onclick="openLoginSettingsModal()" title="ตั้งค่าการเชื่อมต่อ" style="position:absolute; top:14px; right:14px; background:none; border:none; cursor:pointer; font-size:19px; line-height:1; color:var(--ink-soft);">⚙</button>
+        <h1>สมุดบัญชีหนี้</h1>
+        <p>ระบบแจ้งหนี้ &amp; ติดตามการชำระ</p>
+        ${!state.apiUrl ? `
+        <div style="text-align:left;">
+          <p class="setting-hint" style="color:var(--stamp-red);">ระบบยังไม่ได้ตั้งค่าการเชื่อมต่อ</p>
+          <p class="setting-hint">กดปุ่ม ⚙ มุมขวาบน เพื่อกรอก Web App URL แล้วเริ่มใช้งานได้เลย (ดูวิธีหา URL ได้ในคู่มือ README_setup.md)</p>
+          <div class="btn-row"><button class="btn" style="width:100%;" onclick="openLoginSettingsModal()">⚙ ตั้งค่าการเชื่อมต่อ</button></div>
+        </div>` : `
+        <form onsubmit="handleLogin(event)" style="text-align:left;">
+          <label>ชื่อผู้ใช้</label><input id="l_user" required>
+          <label>รหัสผ่าน</label><input id="l_pass" type="password" required>
+          <div id="loginErr" style="color:var(--stamp-red); font-size:12.5px; margin-top:8px;"></div>
+          <div class="btn-row"><button class="btn" style="width:100%;" type="submit">เข้าสู่ระบบ</button></div>
+        </form>
+        <div class="ledger-rule"></div>
+        <div style="font-size:11.5px; color:var(--ink-soft); cursor:pointer;" onclick="openLoginSettingsModal()">⚙ ตั้งค่าการเชื่อมต่อ</div>
+        `}
+      </div>
+    </div>${modalHtml}`;
+    return;
+  }
+
+  let body;
+  if(state.loading && !state.data.dashboard){ body = emptyState('กำลังโหลดข้อมูล...','กรุณารอสักครู่'); }
+  else{
+    switch(state.view){
+      case 'debtors': body = viewDebtors(); break;
+      case 'invoices': body = viewInvoices(); break;
+      case 'payments': body = viewPayments(); break;
+      case 'notify': body = viewNotify(); break;
+      case 'grid': body = viewGrid(); break;
+      case 'admin': body = viewAdmin(); break;
+      default: body = viewDashboard();
+    }
+  }
+
+  app.innerHTML = `${renderSidebar()}<main>${body}</main>${modalHtml}`;
+}
+/* ===================== Init ===================== */
+(async function init(){
+  await loadConfig();
+  try{
+    const s = await storageGet('session:user', false);
+    if(s) state.user = JSON.parse(s);
+  }catch(e){}
+  if(state.user) await refreshAll();
+  render();
+})();
+</script>
+</body>
+</html>
