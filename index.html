@@ -229,6 +229,12 @@
     line-height:1; opacity:0.6;
   }
   .col-del-btn:hover{ opacity:1; }
+  .col-filter-btn{
+    position:absolute; right:9px; bottom:2px; font-size:11px; color:var(--ink-soft);
+    cursor:pointer; line-height:1; opacity:0.65;
+  }
+  .col-filter-btn:hover{ opacity:1; }
+  .col-filter-btn.active{ color:var(--brass); opacity:1; font-weight:700; }
 
   /* ---------- แถบเมนู + แถบไอคอน แบบ Google Sheets จริง (ธีมสว่าง แยกจากธีมสมุดบัญชีของแอป) ---------- */
   .gsheet-menubar{
@@ -290,6 +296,7 @@ const state = {
   adminColumnEntity: 'invoices',
   gridEntity: 'debtors',
   gridColWidths: {debtors:{}, invoices:{}, payments:{}},
+  gridColumnFilters: {debtors:{}, invoices:{}, payments:{}},
   columnFormats: {debtors:{}, invoices:{}, payments:{}},
   gridSearchQuery: '',
   gridHideSystemCols: false,
@@ -605,6 +612,11 @@ function getGridDisplayRows(entity, allHeaders){
   if(q){
     rows = rows.filter(r => allHeaders.some(h => String(r[h]!==undefined && r[h]!==null ? r[h] : '').toLowerCase().includes(q)));
   }
+  const filters = state.gridColumnFilters[entity] || {};
+  Object.keys(filters).forEach(field=>{
+    const allowed = filters[field];
+    if(allowed) rows = rows.filter(r => allowed.has(String(r[field]!==undefined && r[field]!==null ? r[field] : '')));
+  });
   const sort = state.gridSort || {};
   if(sort.field){
     rows.sort((a,b)=>{
@@ -696,6 +708,8 @@ function viewGrid(){
           <div class="mi" onclick="sortGridBy('asc')">🔼 เรียง A → Z / น้อย → มาก</div>
           <div class="mi" onclick="sortGridBy('desc')">🔽 เรียง Z → A / มาก → น้อย</div>
           <div class="mi" onclick="sortGridBy(null)">✕ ยกเลิกการเรียงลำดับ</div>
+          <div class="mi-sep"></div>
+          <div class="mi-note">คลิกไอคอน ▾ ที่หัวคอลัมน์ในตาราง เพื่อกรองแสดงเฉพาะค่าที่เลือก (เหมือนตัวกรองใน Google Sheets)</div>
         </div>
       </div>
       <div class="menubar-item">เครื่องมือ
@@ -724,6 +738,9 @@ function viewGrid(){
     </div>
 
     <div class="gsheet-iconbar">
+      <button class="icon-btn" title="เลิกทำ (Undo)" onclick="gridUndo()">↶</button>
+      <button class="icon-btn" title="ทำซ้ำ (Redo)" onclick="gridRedo()">↷</button>
+      <span class="icon-sep"></span>
       <button class="icon-btn" title="ซูมออก" onclick="adjustZoom(-10)">－</button>
       <span class="mono" style="font-size:12px; min-width:38px; text-align:center; display:inline-block;">${state.gridZoom}%</span>
       <button class="icon-btn" title="ซูมเข้า" onclick="adjustZoom(10)">＋</button>
@@ -763,19 +780,17 @@ function viewGrid(){
       <table class="sheet-table" style="table-layout:fixed; width:100%;">
         <colgroup>
           <col style="width:38px;">
-          ${headers.map((h,i)=>{
-            const flexCount = headers.filter(hh=>!widths[hh]).length || 1;
-            const colStyle = widths[h] ? `width:${widths[h]}px;` : `width:calc((100% - 94px - ${headers.filter(hh=>widths[hh]).reduce((s,hh)=>s+widths[hh],0)}px) / ${flexCount});`;
-            return `<col id="col_${entity}_${i}" style="${colStyle} min-width:70px;">`;
-          }).join('')}
+          ${headers.map((h,i)=>`<col id="col_${entity}_${i}" style="width:${widths[h]||140}px;">`).join('')}
           <col style="width:56px;">
         </colgroup>
         <thead><tr>
           <th class="row-num-head"></th>
           ${headers.map((h,i)=>{
             const isCustom = customLabels.indexOf(h)!==-1;
+            const hasFilter = !!(state.gridColumnFilters[entity]||{})[h];
             return `<th title="${h}" style="position:relative;">
               ${colLetter(i+1)}
+              <span class="col-filter-btn ${hasFilter?'active':''}" title="กรองคอลัมน์นี้" onclick="openColumnFilterModal('${entity}','${h}')">▾</span>
               ${isCustom?`<span class="col-del-btn" title="ลบคอลัมน์นี้" onclick="deleteColumnFromGrid('${entity}','${h}')">×</span>`:''}
               <span class="col-resize-handle" onmousedown="startColResize(event,'${entity}',${i})"></span>
             </th>`;
@@ -892,6 +907,51 @@ async function runSetupFromWeb(){
   }catch(e){ showToast(e.message, true); }
 }
 
+function openColumnFilterModal(entity, field){
+  const rows = state.data[entity] || [];
+  const uniqueValues = Array.from(new Set(rows.map(r => String(r[field]!==undefined && r[field]!==null ? r[field] : '(ว่าง)')))).sort();
+  const currentFilter = (state.gridColumnFilters[entity]||{})[field]; // Set หรือ undefined (undefined = ไม่กรอง = เลือกทั้งหมด)
+  modalHtml = `
+  <div class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+    <div class="modal">
+      <h3 class="display">กรองคอลัมน์: ${field}</h3>
+      <div class="btn-row" style="margin-top:0;">
+        <button class="btn secondary" onclick="toggleAllFilterChecks(true)">เลือกทั้งหมด</button>
+        <button class="btn secondary" onclick="toggleAllFilterChecks(false)">ล้างทั้งหมด</button>
+      </div>
+      <div id="filterCheckList" style="max-height:260px; overflow-y:auto; margin-top:10px; border:1px solid var(--border); padding:8px 10px;">
+        ${uniqueValues.map(v=>`
+          <label style="display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13.5px;">
+            <input type="checkbox" class="filter-check" value="${v.replace(/"/g,'&quot;')}" ${(!currentFilter || currentFilter.has(v)) ? 'checked' : ''}>
+            <span>${v||'(ว่าง)'}</span>
+          </label>`).join('')}
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="applyColumnFilter('${entity}','${field}')">ตกลง</button>
+        <button class="btn secondary" onclick="clearColumnFilter('${entity}','${field}')">ล้างตัวกรองนี้</button>
+        <button class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+      </div>
+    </div>
+  </div>`;
+  render();
+}
+function toggleAllFilterChecks(checked){
+  document.querySelectorAll('.filter-check').forEach(cb=>{ cb.checked = checked; });
+}
+function applyColumnFilter(entity, field){
+  const checks = document.querySelectorAll('.filter-check');
+  const allowed = new Set();
+  let allChecked = true;
+  checks.forEach(cb=>{ if(cb.checked) allowed.add(cb.value); else allChecked = false; });
+  if(allChecked){ delete state.gridColumnFilters[entity][field]; }
+  else{ state.gridColumnFilters[entity][field] = allowed; }
+  closeModal();
+}
+function clearColumnFilter(entity, field){
+  delete state.gridColumnFilters[entity][field];
+  closeModal();
+}
+
 function deleteColumnFromGrid(entity, label){
   const field = (state.data.customFields[entity]||[]).find(f=>f.label===label);
   if(!field){ showToast('ไม่พบข้อมูลคอลัมน์นี้ (อาจเป็นคอลัมน์หลักของระบบ ลบไม่ได้)', true); return; }
@@ -924,6 +984,7 @@ async function onColResizeEnd(){
   const field = headers[colIndex];
   if(!field) return;
   state.gridColWidths[entity][field] = width;
+  autoSizeGridColumns();
   try{ await apiPost('gridSetColumnWidth', {sheetKey: entity, field, width}); }catch(e){ /* เงียบไว้ ไม่รบกวนผู้ใช้ */ }
 }
 
@@ -945,11 +1006,41 @@ async function gridDeleteRow(entity, id){
     await refreshAll();
   }catch(e){ showToast(e.message, true); }
 }
+let gridUndoStack = [];
+let gridRedoStack = [];
+
 async function handleGridCellEdit(el, entity, id, field){
   const value = el.textContent.trim();
+  const row = (state.data[entity]||[]).find(r=>String(r.id)===String(id));
+  const oldValue = row ? (row[field]!==undefined && row[field]!==null ? String(row[field]) : '') : '';
+  if(oldValue === value) return; // ไม่มีอะไรเปลี่ยน ไม่ต้องบันทึกประวัติ
   try{
     await apiPost('gridUpdateCell', {sheetKey: entity, id, field, value});
+    gridUndoStack.push({entity, id, field, oldValue, newValue:value});
+    if(gridUndoStack.length > 50) gridUndoStack.shift();
+    gridRedoStack = [];
     await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+}
+
+async function gridUndo(){
+  if(!gridUndoStack.length){ showToast('ไม่มีอะไรให้ย้อนกลับ', true); return; }
+  const action = gridUndoStack.pop();
+  try{
+    await apiPost('gridUpdateCell', {sheetKey:action.entity, id:action.id, field:action.field, value:action.oldValue});
+    gridRedoStack.push(action);
+    await refreshAll();
+    showToast('ย้อนกลับแล้ว');
+  }catch(e){ showToast(e.message, true); }
+}
+async function gridRedo(){
+  if(!gridRedoStack.length){ showToast('ไม่มีอะไรให้ทำซ้ำ', true); return; }
+  const action = gridRedoStack.pop();
+  try{
+    await apiPost('gridUpdateCell', {sheetKey:action.entity, id:action.id, field:action.field, value:action.newValue});
+    gridUndoStack.push(action);
+    await refreshAll();
+    showToast('ทำซ้ำแล้ว');
   }catch(e){ showToast(e.message, true); }
 }
 
@@ -1466,7 +1557,38 @@ function render(){
   }
 
   app.innerHTML = `${renderSidebar()}<main class="${state.view==='grid'?'main-wide':''}">${body}</main>${modalHtml}`;
+  if(state.view==='grid'){ autoSizeGridColumns(); }
 }
+
+// คำนวณความกว้างคอลัมน์จริง (เป็นพิกเซล) หลัง DOM render เสร็จแล้ว เพื่อให้ตารางเต็มความกว้างของพื้นที่จริง
+// เหมือน Excel/Google Sheets แทนที่จะพึ่ง CSS calc() ล้วนๆ ซึ่งบางสภาพแวดล้อมอาจคำนวณคลาดเคลื่อน
+function autoSizeGridColumns(){
+  const wrap = document.querySelector('.sheet-grid-wrap');
+  if(!wrap) return;
+  const entity = state.gridEntity || 'debtors';
+  const widths = state.gridColWidths[entity] || {};
+  const rows = state.data[entity] || [];
+  const customFields = state.data.customFields[entity] || [];
+  let headers = rows.length
+    ? Object.keys(rows[0])
+    : ['id'].concat(CORE_FIELDS_BY_ENTITY[entity]||[]).concat(['createdAt']).concat(customFields.map(f=>f.label));
+  if(state.gridHideSystemCols){ headers = headers.filter(h=>h!=='id' && h!=='createdAt'); }
+  if(!headers.length) return;
+
+  const containerWidth = wrap.clientWidth || wrap.parentElement.clientWidth || 900;
+  const fixedChrome = 38 + 56; // คอลัมน์เลขแถว + คอลัมน์ปุ่มลบ
+  const customWidthTotal = headers.reduce((s,h)=> s + (widths[h]||0), 0);
+  const flexHeaders = headers.filter(h=>!widths[h]);
+  const remaining = containerWidth - fixedChrome - customWidthTotal;
+  const each = flexHeaders.length ? Math.max(90, Math.floor(remaining / flexHeaders.length)) : 0;
+
+  headers.forEach((h,i)=>{
+    const col = document.getElementById('col_'+entity+'_'+i);
+    if(!col) return;
+    col.style.width = (widths[h] || each) + 'px';
+  });
+}
+window.addEventListener('resize', ()=>{ if(state.view==='grid') autoSizeGridColumns(); });
 /* ===================== Init ===================== */
 (async function init(){
   await loadConfig();
