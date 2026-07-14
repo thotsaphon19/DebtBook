@@ -63,6 +63,7 @@
   .sidebar .footer-note{ margin-top:auto; padding:14px 20px; font-size:11px; opacity:0.55; }
 
   main{ flex:1; padding:28px 36px; max-width:1180px; }
+  main.main-wide{ max-width:none; padding:20px 24px; }
   .topbar{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:22px; }
   .topbar h1{ font-size:26px; margin:0; color:var(--ledger-dark); }
   .user-chip{ font-size:13px; color:var(--ink-soft); display:flex; gap:12px; align-items:center;}
@@ -199,7 +200,7 @@
     background:#efe8d4; color:var(--ink-soft); text-align:center; font-size:11px;
     position:sticky; left:0; z-index:1; padding:5px 6px; font-family:'IBM Plex Mono',monospace;
   }
-  table.sheet-table td.cell{ padding:6px 9px; font-size:13px; min-width:120px; }
+  table.sheet-table td.cell{ padding:6px 9px; font-size:13px; overflow:hidden; white-space:nowrap; }
   table.sheet-table td.cell:focus{ outline:2px solid var(--brass); outline-offset:-2px; background:#fffdf0; }
   table.sheet-table td.cell.readonly-cell{ background:rgba(0,0,0,0.045); color:var(--ink-soft); }
   .sheet-tabs{ display:flex; gap:2px; background:#efe8d4; border-top:1px solid var(--border); padding:5px 8px 0; }
@@ -265,6 +266,15 @@
   .sum-chip{
     margin-left:auto; font-size:12.5px; color:#3c4043; background:#e8f0fe; border:1px solid #d2e3fc;
     padding:5px 10px; border-radius:4px; font-family:'IBM Plex Mono',monospace;
+  }
+  @media print{
+    .sidebar, .gsheet-menubar, .gsheet-iconbar, .formula-bar, .sheet-tabs,
+    .topbar, .setting-hint, .col-resize-handle, .col-del-btn, .row-num, .row-num-head, .no-print { display:none !important; }
+    body{ background:#fff; }
+    main.main-wide{ padding:0; max-width:none; }
+    .card{ border:none; box-shadow:none; }
+    table.sheet-table td, table.sheet-table th{ border:1px solid #999 !important; }
+    table.sheet-table td.cell{ white-space:normal; }
   }
 </style>
 </head>
@@ -634,13 +644,14 @@ function viewGrid(){
 
   return `
   ${renderTopbar('ตารางข้อมูล')}
-  <p class="setting-hint" style="margin-bottom:10px;">หน้านี้คือ Google Sheet ตัวจริงที่ซิงค์กันสด — แก้ที่นี่หรือแก้ในตัว Google Sheet เองก็ได้ ข้อมูลจะตรงกันเสมอ (การค้นหา/เรียงลำดับ/ซูมเป็นมุมมองส่วนตัว ไม่เปลี่ยนลำดับแถวจริงใน Sheet)</p>
+  <p class="setting-hint" style="margin-bottom:8px;">Google Sheet ตัวจริงที่ซิงค์กันสด — แก้ที่นี่หรือแก้ในตัว Sheet เองก็ตรงกันเสมอ (ลากขอบหัวคอลัมน์เพื่อปรับความกว้าง คลิก × ที่หัวคอลัมน์เพื่อลบคอลัมน์ที่เพิ่มเอง)</p>
   <div class="card" style="padding:0; overflow:hidden;">
 
     <div class="gsheet-menubar">
       <div class="menubar-item">ไฟล์
         <div class="menubar-dropdown">
           <div class="mi" onclick="exportGridCSV()">⬇ ดาวน์โหลดเป็น CSV</div>
+          <div class="mi" onclick="window.print()">🖨 พิมพ์ตารางนี้</div>
         </div>
       </div>
       <div class="menubar-item">แก้ไข
@@ -666,6 +677,7 @@ function viewGrid(){
           <div class="mi" onclick="applyColumnFormat({bold:true})"><b>B</b>&nbsp; ตัวหนา</div>
           <div class="mi" onclick="applyColumnFormat({italic:true})"><i>I</i>&nbsp; ตัวเอียง</div>
           <div class="mi" onclick="applyColumnFormat({strikethrough:true})"><s>S</s>&nbsp; ขีดทับ</div>
+          <div class="mi" onclick="applyColumnFormat({borders:true})">⊞&nbsp; เส้นตาราง (ใส่/เอาออก)</div>
           <div class="mi-sep"></div>
           <div class="mi" onclick="applyColumnFormat({align:'left'})">⯇ ชิดซ้าย</div>
           <div class="mi" onclick="applyColumnFormat({align:'center'})">☰ กึ่งกลาง</div>
@@ -726,6 +738,7 @@ function viewGrid(){
       <button class="icon-btn" title="ตัวหนา" onclick="applyColumnFormat({bold:true})"><b>B</b></button>
       <button class="icon-btn" title="ตัวเอียง" onclick="applyColumnFormat({italic:true})"><i>I</i></button>
       <button class="icon-btn" title="ขีดทับ" onclick="applyColumnFormat({strikethrough:true})"><s>S</s></button>
+      <button class="icon-btn" title="เส้นตาราง (ใส่/เอาออก)" onclick="applyColumnFormat({borders:true})">⊞</button>
       <span class="icon-sep"></span>
       <span title="สีตัวอักษร" style="display:inline-flex; align-items:center; gap:2px;">A<input class="icon-input-color" type="color" value="${selectedFmt.fontColor||'#20302c'}" onchange="applyColumnFormat({fontColor:this.value})"></span>
       <span title="สีพื้นหลังเซลล์" style="display:inline-flex; align-items:center; gap:2px;">🪣<input class="icon-input-color" type="color" value="${selectedFmt.backgroundColor||'#ffffff'}" onchange="applyColumnFormat({backgroundColor:this.value})"></span>
@@ -736,6 +749,7 @@ function viewGrid(){
       <span class="icon-sep"></span>
       <button class="icon-btn ${state.gridSearchQuery?'active-toggle':''}" title="ค้นหา/กรอง" onclick="promptGridSearch()">🔍</button>
       <button class="icon-btn" title="ดาวน์โหลด CSV" onclick="exportGridCSV()">⬇ CSV</button>
+      <button class="icon-btn" title="พิมพ์" onclick="window.print()">🖨</button>
       ${sumChip}
     </div>
 
@@ -746,10 +760,14 @@ function viewGrid(){
     </div>
     <div class="sheet-grid-wrap" style="zoom:${state.gridZoom}%;">
       ${!rows.length ? emptyState('ไม่พบข้อมูล','ลองล้างคำค้นหา หรือกด "+ แถวใหม่" เพื่อเริ่มเพิ่มแถวแรก') : `
-      <table class="sheet-table" style="table-layout:fixed;">
+      <table class="sheet-table" style="table-layout:fixed; width:100%;">
         <colgroup>
           <col style="width:38px;">
-          ${headers.map((h,i)=>`<col id="col_${entity}_${i}" style="width:${widths[h]||120}px;">`).join('')}
+          ${headers.map((h,i)=>{
+            const flexCount = headers.filter(hh=>!widths[hh]).length || 1;
+            const colStyle = widths[h] ? `width:${widths[h]}px;` : `width:calc((100% - 94px - ${headers.filter(hh=>widths[hh]).reduce((s,hh)=>s+widths[hh],0)}px) / ${flexCount});`;
+            return `<col id="col_${entity}_${i}" style="${colStyle} min-width:70px;">`;
+          }).join('')}
           <col style="width:56px;">
         </colgroup>
         <thead><tr>
@@ -762,7 +780,7 @@ function viewGrid(){
               <span class="col-resize-handle" onmousedown="startColResize(event,'${entity}',${i})"></span>
             </th>`;
           }).join('')}
-          <th></th>
+          <th class="no-print"></th>
         </tr></thead>
         <tbody>
           ${rows.map((row,ri)=>`
@@ -773,13 +791,13 @@ function viewGrid(){
               const val = (row[h] !== undefined && row[h] !== null) ? row[h] : '';
               const ref = colLetter(ci+1) + (ri+2);
               const fmt = formats[h] || {};
-              const cellStyle = `${fmt.bold?'font-weight:700;':''}${fmt.italic?'font-style:italic;':''}${fmt.strikethrough?'text-decoration:line-through;':''}${fmt.align?'text-align:'+fmt.align+';':''}${fmt.fontSize?'font-size:'+fmt.fontSize+'px;':''}${fmt.fontColor?'color:'+fmt.fontColor+';':''}${fmt.backgroundColor?'background:'+fmt.backgroundColor+';':''}`;
+              const cellStyle = `${fmt.bold?'font-weight:700;':''}${fmt.italic?'font-style:italic;':''}${fmt.strikethrough?'text-decoration:line-through;':''}${fmt.align?'text-align:'+fmt.align+';':''}${fmt.fontSize?'font-size:'+fmt.fontSize+'px;':''}${fmt.fontColor?'color:'+fmt.fontColor+';':''}${fmt.backgroundColor?'background:'+fmt.backgroundColor+';':''}${fmt.borders?'border:1px solid #888;':''}`;
               return `<td class="cell ${readOnly?'readonly-cell':''}" style="${cellStyle}" ${readOnly?'':'contenteditable="true"'}
                 onfocus="updateFormulaBar(this,'${ref}','${entity}','${h}')"
                 ${readOnly?'':`onblur="handleGridCellEdit(this,'${entity}','${row.id}','${h}')"`}
               >${val}</td>`;
             }).join('')}
-            <td style="text-align:center;"><button class="btn danger" style="padding:2px 8px; font-size:11px;" onclick="gridDeleteRow('${entity}','${row.id}')">ลบ</button></td>
+            <td class="no-print" style="text-align:center;"><button class="btn danger" style="padding:2px 8px; font-size:11px;" onclick="gridDeleteRow('${entity}','${row.id}')">ลบ</button></td>
           </tr>`).join('')}
         </tbody>
       </table>`}
@@ -810,6 +828,7 @@ async function applyColumnFormat(format){
   if(format.bold !== undefined) next.bold = !current.bold;
   if(format.italic !== undefined) next.italic = !current.italic;
   if(format.strikethrough !== undefined) next.strikethrough = !current.strikethrough;
+  if(format.borders !== undefined) next.borders = !current.borders;
   if(format.align !== undefined) next.align = format.align;
   if(format.numberFormat !== undefined) next.numberFormat = format.numberFormat;
   if(format.fontSize !== undefined) next.fontSize = format.fontSize;
@@ -826,7 +845,7 @@ async function clearColumnFormat(){
   const entity = gridSelected.entity, field = gridSelected.field;
   state.columnFormats[entity][field] = {};
   try{
-    await apiPost('gridFormatColumn', {sheetKey: entity, field, format:{bold:false, italic:false, strikethrough:false, align:'left', numberFormat:'General', fontSize:10, fontColor:'#000000', backgroundColor:'#ffffff'}});
+    await apiPost('gridFormatColumn', {sheetKey: entity, field, format:{bold:false, italic:false, strikethrough:false, borders:false, align:'left', numberFormat:'General', fontSize:10, fontColor:'#000000', backgroundColor:'#ffffff'}});
     render();
   }catch(e){ showToast(e.message, true); }
 }
@@ -1446,7 +1465,7 @@ function render(){
     }
   }
 
-  app.innerHTML = `${renderSidebar()}<main>${body}</main>${modalHtml}`;
+  app.innerHTML = `${renderSidebar()}<main class="${state.view==='grid'?'main-wide':''}">${body}</main>${modalHtml}`;
 }
 /* ===================== Init ===================== */
 (async function init(){
