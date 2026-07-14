@@ -302,7 +302,7 @@ const state = {
   gridHideSystemCols: false,
   gridSort: { field:null, dir:'asc' },
   gridZoom: 100,
-  data: { dashboard:null, debtors:[], invoices:[], payments:[], notifyLog:[], users:[], lineConfig:null, lineContacts:[], customFields:{debtors:[],invoices:[],payments:[]} },
+  data: { dashboard:null, debtors:[], invoices:[], payments:[], notifyLog:[], users:[], lineConfig:null, lineContacts:[], customFields:{debtors:[],invoices:[],payments:[]}, cellFormulas:{debtors:{},invoices:{},payments:{}} },
   loading:false,
 };
 
@@ -395,21 +395,34 @@ async function refreshAll(){
   state.loading = true; render();
   try{
     const isAdmin = state.user && state.user.role === 'admin';
-    const [dash, debtors, invoices, payments, notifyLog, users, lineConfig, lineContacts, cfDebtors, cfInvoices, cfPayments] = await Promise.all([
+    const [dash, debtors, invoices, payments, notifyLog, users, lineConfig, lineContacts, cfDebtors, cfInvoices, cfPayments, fmDebtors, fmInvoices, fmPayments] = await Promise.all([
       apiGet('dashboard'), apiGet('listDebtors'), apiGet('listInvoices'), apiGet('listPayments'), apiGet('listNotifyLog'),
       isAdmin ? apiGet('listUsers') : Promise.resolve(state.data.users||[]),
       isAdmin ? apiGet('getLineConfig') : Promise.resolve(state.data.lineConfig),
       isAdmin ? apiGet('listLineContacts') : Promise.resolve(state.data.lineContacts||[]),
       apiGet('listCustomFields', {sheetKey:'debtors'}),
       apiGet('listCustomFields', {sheetKey:'invoices'}),
-      apiGet('listCustomFields', {sheetKey:'payments'})
+      apiGet('listCustomFields', {sheetKey:'payments'}),
+      apiGet('gridFormulas', {sheetKey:'debtors'}),
+      apiGet('gridFormulas', {sheetKey:'invoices'}),
+      apiGet('gridFormulas', {sheetKey:'payments'})
     ]);
     const customFields = { debtors: cfDebtors, invoices: cfInvoices, payments: cfPayments };
-    state.data = { dashboard:dash, debtors, invoices, payments, notifyLog, users, lineConfig, lineContacts, customFields };
+    const cellFormulas = {
+      debtors: formulasArrayToMap(fmDebtors),
+      invoices: formulasArrayToMap(fmInvoices),
+      payments: formulasArrayToMap(fmPayments)
+    };
+    state.data = { dashboard:dash, debtors, invoices, payments, notifyLog, users, lineConfig, lineContacts, customFields, cellFormulas };
   }catch(e){
     showToast('โหลดข้อมูลไม่สำเร็จ: ' + e.message, true);
   }
   state.loading = false; render();
+}
+function formulasArrayToMap(arr){
+  const map = {};
+  (arr||[]).forEach(o=>{ map[o.id] = o; });
+  return map;
 }
 
 /* ===================== Views ===================== */
@@ -578,6 +591,8 @@ function viewNotify(){
     </table>`}
   </div>`;
 }
+
+const BLANK_GRID_ROWS = 30; // จำนวนแถวว่างที่โชว์ต่อท้ายข้อมูลจริง เหมือนเปิด Google Sheets/Excel ที่มีแถวว่างเยอะๆ ให้พิมพ์ต่อได้เลย
 
 const CORE_FIELDS_BY_ENTITY = {
   debtors: ['name','phone','lineUserId','note'],
@@ -776,7 +791,7 @@ function viewGrid(){
       <span class="val-box" id="fxVal"></span>
     </div>
     <div class="sheet-grid-wrap" style="zoom:${state.gridZoom}%;">
-      ${!rows.length ? emptyState('ไม่พบข้อมูล','ลองล้างคำค้นหา หรือกด "+ แถวใหม่" เพื่อเริ่มเพิ่มแถวแรก') : `
+      ${!rows.length && (state.gridSearchQuery || Object.keys(state.gridColumnFilters[entity]||{}).length) ? emptyState('ไม่พบข้อมูลที่ตรงกับตัวกรอง/คำค้นหา','ลองล้างคำค้นหาหรือตัวกรองคอลัมน์') : `
       <table class="sheet-table" style="table-layout:fixed; width:100%;">
         <colgroup>
           <col style="width:38px;">
@@ -808,12 +823,28 @@ function viewGrid(){
               const fmt = formats[h] || {};
               const cellStyle = `${fmt.bold?'font-weight:700;':''}${fmt.italic?'font-style:italic;':''}${fmt.strikethrough?'text-decoration:line-through;':''}${fmt.align?'text-align:'+fmt.align+';':''}${fmt.fontSize?'font-size:'+fmt.fontSize+'px;':''}${fmt.fontColor?'color:'+fmt.fontColor+';':''}${fmt.backgroundColor?'background:'+fmt.backgroundColor+';':''}${fmt.borders?'border:1px solid #888;':''}`;
               return `<td class="cell ${readOnly?'readonly-cell':''}" style="${cellStyle}" ${readOnly?'':'contenteditable="true"'}
-                onfocus="updateFormulaBar(this,'${ref}','${entity}','${h}')"
+                onfocus="updateFormulaBar(this,'${ref}','${entity}','${h}','${row.id}')"
                 ${readOnly?'':`onblur="handleGridCellEdit(this,'${entity}','${row.id}','${h}')"`}
               >${val}</td>`;
             }).join('')}
             <td class="no-print" style="text-align:center;"><button class="btn danger" style="padding:2px 8px; font-size:11px;" onclick="gridDeleteRow('${entity}','${row.id}')">ลบ</button></td>
           </tr>`).join('')}
+          ${Array.from({length: BLANK_GRID_ROWS}).map((_,bi)=>{
+            const rowNum = rows.length + 2 + bi;
+            return `
+          <tr>
+            <td class="row-num">${rowNum}</td>
+            ${headers.map((h,ci)=>{
+              const readOnly = (h==='id' || h==='createdAt' || formulaLabels.indexOf(h)!==-1);
+              const ref = colLetter(ci+1) + rowNum;
+              return `<td class="cell ${readOnly?'readonly-cell':''}" ${readOnly?'':'contenteditable="true"'}
+                onfocus="updateFormulaBar(this,'${ref}','${entity}','${h}')"
+                ${readOnly?'':`onblur="handleNewRowCellEdit(this,'${entity}','${h}')"`}
+              ></td>`;
+            }).join('')}
+            <td class="no-print"></td>
+          </tr>`;
+          }).join('')}
         </tbody>
       </table>`}
     </div>
@@ -825,10 +856,19 @@ function viewGrid(){
   </div>`;
 }
 
-function updateFormulaBar(el, ref, entity, field){
+function updateFormulaBar(el, ref, entity, field, rowId){
   gridSelected = { entity, field };
   const refBox = document.getElementById('fxRef');
   const valBox = document.getElementById('fxVal');
+  // ถ้าเซลล์นี้มีสูตรจริงอยู่ ให้โชว์สูตร (เช่น =B2*0.02) แทนค่าที่คำนวณได้ตอนคลิกเข้าไปแก้ไข
+  // เหมือนคลิกเซลล์สูตรใน Excel/Google Sheets แล้วเห็นสูตรจริงในเซลล์/แถบสูตร
+  if(rowId){
+    const rowFormulas = (state.data.cellFormulas[entity]||{})[rowId];
+    const formulaStr = rowFormulas ? rowFormulas[field] : null;
+    if(formulaStr && el.textContent !== formulaStr){
+      el.textContent = formulaStr;
+    }
+  }
   if(refBox) refBox.textContent = ref;
   if(valBox) valBox.textContent = el.textContent;
   // หมายเหตุ: ไม่เรียก render() ตรงนี้โดยตั้งใจ เพราะจะทำให้เซลล์ที่เพิ่งคลิกเสีย focus ทันที
@@ -1012,7 +1052,9 @@ let gridRedoStack = [];
 async function handleGridCellEdit(el, entity, id, field){
   const value = el.textContent.trim();
   const row = (state.data[entity]||[]).find(r=>String(r.id)===String(id));
-  const oldValue = row ? (row[field]!==undefined && row[field]!==null ? String(row[field]) : '') : '';
+  const rowFormulas = (state.data.cellFormulas[entity]||{})[id];
+  const existingFormula = rowFormulas ? rowFormulas[field] : null;
+  const oldValue = existingFormula ? existingFormula : (row ? (row[field]!==undefined && row[field]!==null ? String(row[field]) : '') : '');
   if(oldValue === value) return; // ไม่มีอะไรเปลี่ยน ไม่ต้องบันทึกประวัติ
   try{
     await apiPost('gridUpdateCell', {sheetKey: entity, id, field, value});
@@ -1042,6 +1084,22 @@ async function gridRedo(){
     await refreshAll();
     showToast('ทำซ้ำแล้ว');
   }catch(e){ showToast(e.message, true); }
+}
+
+// พิมพ์ในแถวว่างท้ายตาราง (เหมือนพิมพ์ต่อท้ายข้อมูลใน Excel/Sheets) -> สร้างแถวจริงในชีทให้อัตโนมัติ
+let creatingNewGridRow = false;
+async function handleNewRowCellEdit(el, entity, field){
+  const value = el.textContent.trim();
+  if(!value || creatingNewGridRow) return;
+  creatingNewGridRow = true;
+  try{
+    const res = await apiPost('gridAddRow', {sheetKey: entity});
+    if(res && res.id){
+      await apiPost('gridUpdateCell', {sheetKey: entity, id: res.id, field, value});
+    }
+    await refreshAll();
+  }catch(e){ showToast(e.message, true); }
+  creatingNewGridRow = false;
 }
 
 function viewAdmin(){
